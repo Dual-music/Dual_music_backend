@@ -1,0 +1,63 @@
+# ============================================================================
+# Dual Music backend — local development stack.
+#   docker compose up  → MySQL 8, Redis 7, MailHog and the API (once built).
+# The API waits for MySQL/Redis health before starting.
+# ============================================================================
+services:
+  mysql:
+    image: mysql:8.0
+    command: >-
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --default-time-zone=+00:00
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-change_me}
+      MYSQL_DATABASE: ${DB_NAME:-duel_music}
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-p${DB_PASSWORD:-change_me}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # Web UI
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DB_HOST: mysql
+      REDIS_URL: redis://redis:6379
+      SMTP_HOST: mailhog
+    ports:
+      - '4000:4000'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Apply migrations & procedures, then start the API.
+    command: sh -c "npm run db:migrate && npm run db:procedures && npm run db:seed && npm start"
+
+volumes:
+  mysql_data:

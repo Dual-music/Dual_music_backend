@@ -1,0 +1,14 @@
+const path = require('path');
+
+/**
+ * sequelize-cli path configuration.
+ * The app runtime uses ES modules, but the CLI (migrations/seeders/config) runs
+ * in a CommonJS context — therefore migrations and the CLI config use the `.cjs`
+ * extension so `module.exports` works under `"type": "module"`.
+ */
+module.exports = {
+  config: path.resolve('src', 'config', 'config.cjs'),
+  'models-path': path.resolve('src', 'models'),
+  'migrations-path': path.resolve('src', 'migrations'),
+  'seeders-path': path.resolve('src', 'seeders'),
+};

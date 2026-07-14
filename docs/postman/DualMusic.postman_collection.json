@@ -1,0 +1,3026 @@
+{
+  "info": {
+    "name": "Dual Music API",
+    "_postman_id": "d0a1b2c3-0000-4000-8000-dualmusic0001",
+    "description": "REST API collection for the Dual Music backend (Node/Express/Sequelize/MySQL). Set the `baseUrl` variable (default http://localhost:4000/api/v1). Register or Login auto-saves `accessToken` and `refreshToken` via test scripts. All non-public requests inherit Bearer auth from the collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000/api/v1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "duelId",
+      "value": ""
+    },
+    {
+      "key": "concertId",
+      "value": ""
+    },
+    {
+      "key": "competitionId",
+      "value": ""
+    },
+    {
+      "key": "liveId",
+      "value": ""
+    },
+    {
+      "key": "giftId",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "seasonId",
+      "value": ""
+    },
+    {
+      "key": "rewardId",
+      "value": ""
+    },
+    {
+      "key": "winnerId",
+      "value": ""
+    },
+    {
+      "key": "notificationId",
+      "value": ""
+    },
+    {
+      "key": "reportId",
+      "value": ""
+    },
+    {
+      "key": "banId",
+      "value": ""
+    },
+    {
+      "key": "tierId",
+      "value": ""
+    },
+    {
+      "key": "sponsorRequestId",
+      "value": ""
+    },
+    {
+      "key": "adVideoId",
+      "value": ""
+    },
+    {
+      "key": "adPlayId",
+      "value": ""
+    },
+    {
+      "key": "withdrawalId",
+      "value": ""
+    },
+    {
+      "key": "payoutMethodId",
+      "value": ""
+    },
+    {
+      "key": "planId",
+      "value": ""
+    },
+    {
+      "key": "referralId",
+      "value": ""
+    },
+    {
+      "key": "replayId",
+      "value": ""
+    },
+    {
+      "key": "distributionId",
+      "value": ""
+    },
+    {
+      "key": "artistConcertId",
+      "value": ""
+    },
+    {
+      "key": "dedicationId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/ready"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const d = pm.response.json().data || {};",
+                  "if (d.accessToken) pm.collectionVariables.set('accessToken', d.accessToken);",
+                  "if (d.refreshToken) pm.collectionVariables.set('refreshToken', d.refreshToken);",
+                  "if (d.user) pm.collectionVariables.set('userId', d.user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"Sup3rSecret!\",\n  \"fullName\": \"Alice Test\",\n  \"phone\": \"+33612345678\",\n  \"countryCode\": \"FR\",\n  \"phoneCountryCode\": \"+33\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register"
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const d = pm.response.json().data || {};",
+                  "if (d.accessToken) pm.collectionVariables.set('accessToken', d.accessToken);",
+                  "if (d.refreshToken) pm.collectionVariables.set('refreshToken', d.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"Sup3rSecret!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const d = pm.response.json().data || {};",
+                  "if (d.accessToken) pm.collectionVariables.set('accessToken', d.accessToken);",
+                  "if (d.refreshToken) pm.collectionVariables.set('refreshToken', d.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        },
+        {
+          "name": "Send phone OTP",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/otp/phone/send"
+          }
+        },
+        {
+          "name": "Verify phone OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/otp/phone/verify"
+          }
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/password/forgot"
+          }
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"code\": \"123456\",\n  \"newPassword\": \"BrandN3wPass!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/password/reset"
+          }
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Sup3rSecret!\",\n  \"newPassword\": \"BrandN3wPass!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/password/change"
+          }
+        },
+        {
+          "name": "OAuth Google (start)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/auth/oauth/google"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Display profiles (batch)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [\"{{userId}}\"]\n}"
+            },
+            "url": "{{baseUrl}}/users/display-profiles"
+          }
+        },
+        {
+          "name": "Get profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Alice Updated\",\n  \"bio\": \"Music lover\",\n  \"is_public\": true\n}"
+            },
+            "url": "{{baseUrl}}/users/me"
+          }
+        },
+        {
+          "name": "My preferences",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/users/me/preferences"
+          }
+        },
+        {
+          "name": "Set currency",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currencyCode\": \"EUR\"\n}"
+            },
+            "url": "{{baseUrl}}/users/me/preferences/currency"
+          }
+        },
+        {
+          "name": "Follow",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/users/{{userId}}/follow"
+          }
+        },
+        {
+          "name": "Unfollow",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/users/{{userId}}/follow"
+          }
+        },
+        {
+          "name": "My following",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/users/me/following"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Creators",
+      "item": [
+        {
+          "name": "List artists",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/artists"
+          }
+        },
+        {
+          "name": "Apply as artist",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"I am an emerging artist with 5 years of experience.\",\n  \"socialLinks\": { \"instagram\": \"@alice\" }\n}"
+            },
+            "url": "{{baseUrl}}/artists/requests"
+          }
+        },
+        {
+          "name": "List artist requests (admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/artists/requests?status=pending"
+          }
+        },
+        {
+          "name": "Review artist request (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approve\": true\n}"
+            },
+            "url": "{{baseUrl}}/artists/requests/:id/review"
+          }
+        },
+        {
+          "name": "Update artist profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage_name\": \"DJ Alice\",\n  \"bio\": \"On stage\"\n}"
+            },
+            "url": "{{baseUrl}}/artists/me"
+          }
+        },
+        {
+          "name": "Apply as manager",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bio\": \"Experienced manager\",\n  \"experience\": \"10 years managing artists\"\n}"
+            },
+            "url": "{{baseUrl}}/managers/requests"
+          }
+        },
+        {
+          "name": "Review manager request (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approve\": true\n}"
+            },
+            "url": "{{baseUrl}}/managers/requests/:id/review"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wallet",
+      "item": [
+        {
+          "name": "Balance",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/wallet"
+          }
+        },
+        {
+          "name": "Revenues by event",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/wallet/revenues"
+          }
+        },
+        {
+          "name": "Revenue breakdown",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/wallet/revenues/breakdown"
+          }
+        },
+        {
+          "name": "Vote (paid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"duelId\": \"{{duelId}}\",\n  \"artistId\": \"{{userId}}\",\n  \"amount\": 10\n}"
+            },
+            "url": "{{baseUrl}}/wallet/vote"
+          }
+        },
+        {
+          "name": "Buy gifts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"giftId\": \"{{giftId}}\",\n  \"quantity\": 2\n}"
+            },
+            "url": "{{baseUrl}}/wallet/gifts/purchase"
+          }
+        },
+        {
+          "name": "Send gift",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"giftId\": \"{{giftId}}\",\n  \"toUserId\": \"{{userId}}\",\n  \"duelId\": \"{{duelId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/wallet/gifts/send"
+          }
+        },
+        {
+          "name": "Buy duel ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"duelId\": \"{{duelId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/wallet/tickets/duel"
+          }
+        },
+        {
+          "name": "Buy concert ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"concertId\": \"{{concertId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/wallet/tickets/concert"
+          }
+        },
+        {
+          "name": "Unlock replay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"replayId\": \"REPLAY_UUID\"\n}"
+            },
+            "url": "{{baseUrl}}/wallet/replays/unlock"
+          }
+        },
+        {
+          "name": "Event transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/wallet/transactions?sourceId={{duelId}}&limit=25&offset=0"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "CinetPay init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 1000,\n  \"countryCode\": \"CI\",\n  \"phone\": \"+2250700000000\"\n}"
+            },
+            "url": "{{baseUrl}}/payments/cinetpay/init"
+          }
+        },
+        {
+          "name": "Moneroo init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 1000,\n  \"currency\": \"XOF\",\n  \"phone\": \"+2250700000000\"\n}"
+            },
+            "url": "{{baseUrl}}/payments/moneroo/init"
+          }
+        },
+        {
+          "name": "Stripe credits checkout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10,\n  \"currency\": \"EUR\"\n}"
+            },
+            "url": "{{baseUrl}}/payments/stripe/credits"
+          }
+        },
+        {
+          "name": "Stripe subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"pro\"\n}"
+            },
+            "url": "{{baseUrl}}/payments/stripe/subscription"
+          }
+        },
+        {
+          "name": "CinetPay verify tx (admin)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/payments/cinetpay/verify?merchantId=cp_xxx"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "LiveKit",
+      "item": [
+        {
+          "name": "Issue token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomName\": \"duel:{{duelId}}\",\n  \"isHost\": true,\n  \"participantName\": \"Host\",\n  \"canPublish\": true\n}"
+            },
+            "url": "{{baseUrl}}/livekit/token"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Gifts",
+      "item": [
+        {
+          "name": "Catalog",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/gifts"
+          }
+        },
+        {
+          "name": "My inventory",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/gifts/inventory"
+          }
+        },
+        {
+          "name": "Top donor",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/gifts/top-donor?duelId={{duelId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Duels",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/duels?status=live"
+          }
+        },
+        {
+          "name": "Create (admin/manager)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const d = pm.response.json().data; if (d && d.id) pm.collectionVariables.set('duelId', d.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artist1Id\": \"ARTIST1_UUID\",\n  \"artist2Id\": \"ARTIST2_UUID\",\n  \"ticketPrice\": 5\n}"
+            },
+            "url": "{{baseUrl}}/duels"
+          }
+        },
+        {
+          "name": "Get",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/duels/{{duelId}}"
+          }
+        },
+        {
+          "name": "Vote totals",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/duels/{{duelId}}/votes"
+          }
+        },
+        {
+          "name": "Update (status/winner)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"live\"\n}"
+            },
+            "url": "{{baseUrl}}/duels/{{duelId}}"
+          }
+        },
+        {
+          "name": "Create request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"opponentId\": \"OPPONENT_UUID\",\n  \"message\": \"Let's duel!\"\n}"
+            },
+            "url": "{{baseUrl}}/duels/requests"
+          }
+        },
+        {
+          "name": "Respond to request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accept\": true\n}"
+            },
+            "url": "{{baseUrl}}/duels/requests/:id/respond"
+          }
+        },
+        {
+          "name": "My requests",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/duels/requests/mine"
+          }
+        },
+        {
+          "name": "List messages",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/duels/{{duelId}}/messages"
+          }
+        },
+        {
+          "name": "Post message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Great performance!\"\n}"
+            },
+            "url": "{{baseUrl}}/duels/{{duelId}}/messages"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lives",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/lives?status=live"
+          }
+        },
+        {
+          "name": "Start (artist)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const d = pm.response.json().data; if (d && d.id) pm.collectionVariables.set('liveId', d.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Friday night live\"\n}"
+            },
+            "url": "{{baseUrl}}/lives"
+          }
+        },
+        {
+          "name": "Get",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/lives/{{liveId}}"
+          }
+        },
+        {
+          "name": "Like",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/lives/{{liveId}}/likes"
+          }
+        },
+        {
+          "name": "Request join",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/lives/{{liveId}}/join"
+          }
+        },
+        {
+          "name": "End",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/lives/{{liveId}}/end"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Concerts",
+      "item": [
+        {
+          "name": "List admin concerts",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/concerts"
+          }
+        },
+        {
+          "name": "Create (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"artistName\": \"The Band\",\n  \"title\": \"Live in Abidjan\",\n  \"scheduledDate\": \"2026-08-01T20:00:00Z\",\n  \"ticketPrice\": 20\n}"
+            },
+            "url": "{{baseUrl}}/concerts"
+          }
+        },
+        {
+          "name": "List artist concerts",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/artist-concerts"
+          }
+        },
+        {
+          "name": "Create artist concert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"My solo show\",\n  \"scheduledDate\": \"2026-08-10T19:00:00Z\",\n  \"ticketPrice\": 10\n}"
+            },
+            "url": "{{baseUrl}}/artist-concerts"
+          }
+        },
+        {
+          "name": "Review artist concert (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approve\": true\n}"
+            },
+            "url": "{{baseUrl}}/artist-concerts/:id/review"
+          }
+        },
+        {
+          "name": "Purchase dedication",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"concertId\": \"{{artistConcertId}}\",\n  \"concertType\": \"artist_concert\",\n  \"message\": \"Joyeux anniversaire !\",\n  \"priceCredits\": 50\n}"
+            },
+            "url": "{{baseUrl}}/concerts/dedications"
+          },
+          "response": []
+        },
+        {
+          "name": "My dedications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/concerts/dedications/me"
+          },
+          "response": []
+        },
+        {
+          "name": "List dedications (host)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/concerts/dedications?concertId={{artistConcertId}}&concertType=artist_concert"
+          },
+          "response": []
+        },
+        {
+          "name": "Deliver dedication (artist)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/concerts/dedications/{{dedicationId}}/deliver"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Competitions",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/competitions"
+          }
+        },
+        {
+          "name": "Create (manager)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const d = pm.response.json().data; if (d && d.id) pm.collectionVariables.set('competitionId', d.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Summer Contest\",\n  \"viewerTicketPrice\": 5,\n  \"rewardAmount\": 1000\n}"
+            },
+            "url": "{{baseUrl}}/competitions"
+          }
+        },
+        {
+          "name": "Get",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/competitions/{{competitionId}}"
+          }
+        },
+        {
+          "name": "Candidates",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/candidates"
+          }
+        },
+        {
+          "name": "Publish",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/publish"
+          }
+        },
+        {
+          "name": "Apply (artist)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pitch\": \"Pick me!\"\n}"
+            },
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/apply"
+          }
+        },
+        {
+          "name": "Review candidate (manager)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approve\": true\n}"
+            },
+            "url": "{{baseUrl}}/competitions/candidates/:id/review"
+          }
+        },
+        {
+          "name": "Set performer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidateId\": \"CANDIDATE_UUID\",\n  \"durationSec\": 120\n}"
+            },
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/performer"
+          }
+        },
+        {
+          "name": "Set focus",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"participantId\": \"CANDIDATE_UUID\"\n}"
+            },
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/focus"
+          }
+        },
+        {
+          "name": "Vote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidateId\": \"CANDIDATE_UUID\",\n  \"credits\": 10\n}"
+            },
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/vote"
+          }
+        },
+        {
+          "name": "Send gift",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"candidateId\": \"CANDIDATE_UUID\",\n  \"giftId\": \"{{giftId}}\",\n  \"credits\": 50\n}"
+            },
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/gifts"
+          }
+        },
+        {
+          "name": "Buy ticket",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/tickets"
+          }
+        },
+        {
+          "name": "Finalize",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/competitions/{{competitionId}}/finalize"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Moderation",
+      "item": [
+        {
+          "name": "Report account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportedUserId\": \"{{userId}}\",\n  \"reason\": \"harassment\",\n  \"details\": \"...\"\n}"
+            },
+            "url": "{{baseUrl}}/moderation/reports/account"
+          },
+          "response": []
+        },
+        {
+          "name": "Report live",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"liveId\": \"{{liveId}}\",\n  \"reason\": \"inappropriate\"\n}"
+            },
+            "url": "{{baseUrl}}/moderation/reports/live"
+          },
+          "response": []
+        },
+        {
+          "name": "Report competition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"competitionId\": \"{{competitionId}}\",\n  \"reason\": \"cheating\"\n}"
+            },
+            "url": "{{baseUrl}}/moderation/reports/competition"
+          },
+          "response": []
+        },
+        {
+          "name": "List reports (mod/admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/moderation/reports/account?status=pending"
+          },
+          "response": []
+        },
+        {
+          "name": "Review report (mod/admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"resolved\"\n}"
+            },
+            "url": "{{baseUrl}}/moderation/reports/account/{{reportId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "List stream bans",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/moderation/stream-bans?streamId={{duelId}}&streamType=duel"
+          },
+          "response": []
+        },
+        {
+          "name": "Ban from stream",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamId\": \"{{duelId}}\",\n  \"streamType\": \"duel\",\n  \"bannedUserId\": \"{{userId}}\",\n  \"reason\": \"spam\"\n}"
+            },
+            "url": "{{baseUrl}}/moderation/stream-bans"
+          },
+          "response": []
+        },
+        {
+          "name": "Lift stream ban",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/moderation/stream-bans/{{banId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Ban from competition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"competitionId\": \"{{competitionId}}\",\n  \"bannedUserId\": \"{{userId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/moderation/competition-bans"
+          },
+          "response": []
+        },
+        {
+          "name": "Platform ban (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"reason\": \"ToS violation\",\n  \"permanent\": true\n}"
+            },
+            "url": "{{baseUrl}}/moderation/platform-bans"
+          },
+          "response": []
+        },
+        {
+          "name": "Platform unban (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/moderation/platform-bans"
+          },
+          "response": []
+        },
+        {
+          "name": "List platform bans (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/moderation/platform-bans"
+          },
+          "response": []
+        },
+        {
+          "name": "Issue warning (mod/admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"message\": \"Please respect the rules\"\n}"
+            },
+            "url": "{{baseUrl}}/moderation/warnings"
+          },
+          "response": []
+        },
+        {
+          "name": "My warnings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/moderation/warnings/me"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notifications?limit=20"
+          },
+          "response": []
+        },
+        {
+          "name": "Unread count",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notifications/unread-count"
+          },
+          "response": []
+        },
+        {
+          "name": "Preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notifications/preferences"
+          },
+          "response": []
+        },
+        {
+          "name": "Update email prefs",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_gifts\": false,\n  \"email_system\": true\n}"
+            },
+            "url": "{{baseUrl}}/notifications/preferences/email"
+          },
+          "response": []
+        },
+        {
+          "name": "Push subscribe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endpoint\": \"https://push.example/abc\",\n  \"p256dh\": \"...\",\n  \"auth\": \"...\"\n}"
+            },
+            "url": "{{baseUrl}}/notifications/push/subscribe"
+          },
+          "response": []
+        },
+        {
+          "name": "Push unsubscribe",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endpoint\": \"https://push.example/abc\"\n}"
+            },
+            "url": "{{baseUrl}}/notifications/push/subscribe"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notifications/read-all"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark one read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notifications/{{notificationId}}/read"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/notifications/{{notificationId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Leaderboards",
+      "item": [
+        {
+          "name": "List seasons",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/leaderboards/seasons"
+          },
+          "response": []
+        },
+        {
+          "name": "Get season",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/leaderboards/seasons/{{seasonId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Season ranking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/leaderboards/seasons/{{seasonId}}/ranking?limit=50"
+          },
+          "response": []
+        },
+        {
+          "name": "Season live ranking (Redis ZSET)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/leaderboards/seasons/{{seasonId}}/live?limit=50"
+          },
+          "response": []
+        },
+        {
+          "name": "Season winners",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/leaderboards/seasons/{{seasonId}}/winners"
+          },
+          "response": []
+        },
+        {
+          "name": "Create season (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"August 2026\",\n  \"type\": \"artist\",\n  \"start_date\": \"2026-08-01T00:00:00Z\",\n  \"end_date\": \"2026-08-31T23:59:59Z\",\n  \"is_active\": true\n}"
+            },
+            "url": "{{baseUrl}}/leaderboards/seasons"
+          },
+          "response": []
+        },
+        {
+          "name": "Update season (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}"
+            },
+            "url": "{{baseUrl}}/leaderboards/seasons/{{seasonId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete season (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/leaderboards/seasons/{{seasonId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Add reward (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rank_position\": 1,\n  \"reward_type\": \"credits\",\n  \"credits_amount\": 500\n}"
+            },
+            "url": "{{baseUrl}}/leaderboards/seasons/{{seasonId}}/rewards"
+          },
+          "response": []
+        },
+        {
+          "name": "Update reward (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"credits_amount\": 1000\n}"
+            },
+            "url": "{{baseUrl}}/leaderboards/rewards/{{rewardId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete reward (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/leaderboards/rewards/{{rewardId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Update winner (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reward_status\": \"distributed\",\n  \"distributed_at\": \"2026-09-01T10:00:00Z\"\n}"
+            },
+            "url": "{{baseUrl}}/leaderboards/winners/{{winnerId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Respond to meeting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"meeting_status\": \"accepted\"\n}"
+            },
+            "url": "{{baseUrl}}/leaderboards/winners/{{winnerId}}/respond"
+          },
+          "response": []
+        },
+        {
+          "name": "Distribute reward (admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/leaderboards/winners/{{winnerId}}/distribute"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark reward received (winner)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/leaderboards/winners/{{winnerId}}/mark-received"
+          },
+          "response": []
+        },
+        {
+          "name": "Notify winners (admin)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/leaderboards/seasons/{{seasonId}}/notify-winners"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Sponsors",
+      "item": [
+        {
+          "name": "List price tiers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sponsors/tiers"
+          },
+          "response": []
+        },
+        {
+          "name": "Create tier (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Spot 30s\",\n  \"min_seconds\": 0,\n  \"max_seconds\": 30,\n  \"price_credits\": 200,\n  \"is_active\": true\n}"
+            },
+            "url": "{{baseUrl}}/sponsors/tiers"
+          },
+          "response": []
+        },
+        {
+          "name": "Update tier (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_credits\": 250\n}"
+            },
+            "url": "{{baseUrl}}/sponsors/tiers/{{tierId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete tier (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sponsors/tiers/{{tierId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Create request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"duel\",\n  \"eventId\": \"{{duelId}}\",\n  \"mediaType\": \"video\",\n  \"mediaUrl\": \"https://cdn.example/ad.mp4\",\n  \"mediaDurationSeconds\": 20,\n  \"description\": \"My brand\"\n}"
+            },
+            "url": "{{baseUrl}}/sponsors/requests"
+          },
+          "response": []
+        },
+        {
+          "name": "Pay request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sponsors/requests/{{sponsorRequestId}}/pay"
+          },
+          "response": []
+        },
+        {
+          "name": "My requests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sponsors/requests/me"
+          },
+          "response": []
+        },
+        {
+          "name": "List requests (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sponsors/requests?status=pending"
+          },
+          "response": []
+        },
+        {
+          "name": "Review request (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            },
+            "url": "{{baseUrl}}/sponsors/requests/{{sponsorRequestId}}/review"
+          },
+          "response": []
+        },
+        {
+          "name": "List ad videos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sponsors/ads?eventId={{duelId}}&eventType=duel"
+          },
+          "response": []
+        },
+        {
+          "name": "Start ad broadcast",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"{{duelId}}\",\n  \"eventType\": \"duel\",\n  \"adVideoId\": \"{{adVideoId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/sponsors/ads/play"
+          },
+          "response": []
+        },
+        {
+          "name": "Stop ad broadcast",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/sponsors/ads/plays/{{adPlayId}}/stop"
+          },
+          "response": []
+        },
+        {
+          "name": "Default price",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sponsors/default-price?duration=20"
+          },
+          "response": []
+        },
+        {
+          "name": "Set request price (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"priceCredits\": 250\n}"
+            },
+            "url": "{{baseUrl}}/sponsors/requests/{{sponsorRequestId}}/price"
+          },
+          "response": []
+        },
+        {
+          "name": "Approve reusing media (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mediaUrl\": \"https://cdn/reused.mp4\",\n  \"durationSeconds\": 15\n}"
+            },
+            "url": "{{baseUrl}}/sponsors/requests/{{sponsorRequestId}}/approve-reuse"
+          },
+          "response": []
+        },
+        {
+          "name": "Ad history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sponsors/ads/history?eventId={{duelId}}&eventType=duel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Replays",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/replays?sourceType=duel"
+          },
+          "response": []
+        },
+        {
+          "name": "Get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/replays/{{replayId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Create (host)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceType\": \"duel\",\n  \"eventId\": \"{{duelId}}\",\n  \"title\": \"Epic Duel\",\n  \"videoUrl\": \"https://cdn/replay.mp4\",\n  \"duration\": 120,\n  \"isPremium\": true,\n  \"replayPrice\": 100\n}"
+            },
+            "url": "{{baseUrl}}/replays"
+          },
+          "response": []
+        },
+        {
+          "name": "Update (owner/admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_public\": false,\n  \"replay_price\": 50\n}"
+            },
+            "url": "{{baseUrl}}/replays/{{replayId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete (owner/admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/replays/{{replayId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Check access",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/replays/{{replayId}}/access"
+          },
+          "response": []
+        },
+        {
+          "name": "Increment views",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/replays/{{replayId}}/views"
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle like",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/replays/{{replayId}}/likes"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Uploads",
+      "item": [
+        {
+          "name": "Presign upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"avatar\",\n  \"filename\": \"me.jpg\",\n  \"contentType\": \"image/jpeg\",\n  \"size\": 120000\n}"
+            },
+            "url": "{{baseUrl}}/uploads/presign"
+          },
+          "response": []
+        },
+        {
+          "name": "Presign download (private)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"uploads/replays/{{userId}}/abc.mp4\"\n}"
+            },
+            "url": "{{baseUrl}}/uploads/presign-download"
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm upload (magic-bytes + scan)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"uploads/avatars/{{userId}}/abc.jpg\"\n}"
+            },
+            "url": "{{baseUrl}}/uploads/confirm"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Withdrawals",
+      "item": [
+        {
+          "name": "Has PIN",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawals/pin"
+          },
+          "response": []
+        },
+        {
+          "name": "Set PIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPin\": \"123456\"\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals/pin"
+          },
+          "response": []
+        },
+        {
+          "name": "Verify PIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pin\": \"123456\"\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals/pin/verify"
+          },
+          "response": []
+        },
+        {
+          "name": "Request PIN reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawals/pin/reset/request"
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm PIN reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"000000\",\n  \"newPin\": \"654321\"\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals/pin/reset/confirm"
+          },
+          "response": []
+        },
+        {
+          "name": "Net preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 1000\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals/net"
+          },
+          "response": []
+        },
+        {
+          "name": "List payout methods",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawals/methods"
+          },
+          "response": []
+        },
+        {
+          "name": "Add payout method",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"mobile_money\",\n  \"label\": \"MoMo\",\n  \"phone_number\": \"+2250700000000\",\n  \"mobile_operator\": \"orange\",\n  \"is_default\": true\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals/methods"
+          },
+          "response": []
+        },
+        {
+          "name": "Update payout method",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_default\": true\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals/methods/{{payoutMethodId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete payout method",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawals/methods/{{payoutMethodId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Request withdrawal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 1000,\n  \"pin\": \"123456\",\n  \"provider\": \"cinetpay\"\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals"
+          },
+          "response": []
+        },
+        {
+          "name": "My withdrawals",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawals/me"
+          },
+          "response": []
+        },
+        {
+          "name": "List all (admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawals?status=pending"
+          },
+          "response": []
+        },
+        {
+          "name": "Approve (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawals/{{withdrawalId}}/approve"
+          },
+          "response": []
+        },
+        {
+          "name": "Reject+refund (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/withdrawals/{{withdrawalId}}/reject"
+          },
+          "response": []
+        },
+        {
+          "name": "Complete (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"providerTxId\": \"CP-TX-123\"\n}"
+            },
+            "url": "{{baseUrl}}/withdrawals/{{withdrawalId}}/complete"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "List plans",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/subscriptions/plans"
+          },
+          "response": []
+        },
+        {
+          "name": "My subscription",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/subscriptions/me"
+          },
+          "response": []
+        },
+        {
+          "name": "Checkout (Stripe)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"premium\"\n}"
+            },
+            "url": "{{baseUrl}}/subscriptions/checkout"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/subscriptions/cancel"
+          },
+          "response": []
+        },
+        {
+          "name": "Create plan (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Premium\",\n  \"price\": 9.99,\n  \"currency\": \"EUR\",\n  \"features\": [\n    \"HD\",\n    \"No ads\"\n  ],\n  \"sort_order\": 2\n}"
+            },
+            "url": "{{baseUrl}}/subscriptions/plans"
+          },
+          "response": []
+        },
+        {
+          "name": "Update plan (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 12.99\n}"
+            },
+            "url": "{{baseUrl}}/subscriptions/plans/{{planId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete plan (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/subscriptions/plans/{{planId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Referrals",
+      "item": [
+        {
+          "name": "Config (public)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/referrals/config"
+          },
+          "response": []
+        },
+        {
+          "name": "My referrals",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/referrals/me"
+          },
+          "response": []
+        },
+        {
+          "name": "Claim reward",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/referrals/{{referralId}}/claim"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/stats"
+          },
+          "response": []
+        },
+        {
+          "name": "Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/logs?limit=50"
+          },
+          "response": []
+        },
+        {
+          "name": "Get user roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles/{{userId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Assign role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"role\": \"moderator\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/roles"
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke role",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"role\": \"moderator\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/roles"
+          },
+          "response": []
+        },
+        {
+          "name": "Get all settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/settings"
+          },
+          "response": []
+        },
+        {
+          "name": "Get setting",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/settings/economic_config"
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert setting",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"credit_value_usd\": 0.01\n  }\n}"
+            },
+            "url": "{{baseUrl}}/admin/settings/economic_config"
+          },
+          "response": []
+        },
+        {
+          "name": "Analytics: revenue",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/analytics/revenue?period=month"
+          },
+          "response": []
+        },
+        {
+          "name": "Analytics: credit purchases",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/analytics/credit-purchases"
+          },
+          "response": []
+        },
+        {
+          "name": "Analytics: top earners",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/analytics/top-earners?period=month&limit=10"
+          },
+          "response": []
+        },
+        {
+          "name": "Analytics: compare distribution",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/analytics/distribution/{{distributionId}}/compare"
+          },
+          "response": []
+        },
+        {
+          "name": "Broadcast announcement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Maintenance\",\n  \"message\": \"Le service sera indisponible ce soir.\",\n  \"type\": \"announcement\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/announcements"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

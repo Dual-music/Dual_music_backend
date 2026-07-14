@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & OpenAPI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Generate OpenAPI (fails if routers do not load)
+        run: npm run docs:openapi
+
+  test:
+    name: Tests & coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Provide env file (defaults from example)
+        run: cp .env.example .env
+      # Hard gate: all tests pass + money-module coverage thresholds
+      # (wallet/payments/pricing: 100% lines/funcs/statements, 90% branches).
+      - name: Run tests with coverage (SQLite in-memory)
+        run: npm run test:coverage
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+
+  migrate-check:
+    name: Migrations up/down (MySQL 8)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: duel_music
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+    env:
+      NODE_ENV: development
+      DB_DIALECT: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: duel_music
+      DB_USER: root
+      DB_PASSWORD: root
+      REDIS_OPTIONAL: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Provide env file
+        run: cp .env.example .env
+      - name: Wait for MySQL (via mysql2)
+        run: |
+          node -e "
+          const mysql = require('mysql2/promise');
+          (async () => {
+            for (let i = 0; i < 30; i++) {
+              try {
+                const c = await mysql.createConnection({ host: '127.0.0.1', port: 3306, user: 'root', password: 'root' });
+                await c.end();
+                console.log('MySQL ready'); process.exit(0);
+              } catch { console.log('waiting for mysql', i); await new Promise(r => setTimeout(r, 2000)); }
+            }
+            console.error('MySQL not ready'); process.exit(1);
+          })();
+          "
+      - name: Migrate up
+        run: npm run db:migrate
+      - name: Apply stored procedures
+        run: npm run db:procedures
+      - name: Migration status
+        run: npm run db:migrate:status
+      - name: Migrate down (verify reversible)
+        run: npm run db:migrate:undo:all
+      - name: Migrate up again (idempotency)
+        run: npm run db:migrate
+
+  docker-build:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (multi-stage)
+        run: docker build -t dual-music-api:ci .
