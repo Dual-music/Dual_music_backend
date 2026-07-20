@@ -66,6 +66,18 @@ export async function verifyPhoneOtp(req, res) {
   return sendSuccess(res, { verified: true });
 }
 
+/** POST /auth/otp/email/send (authenticated) — (re)send an email-verification code. */
+export async function sendEmailOtp(req, res) {
+  await authService.requestEmailOtp(req.user.id);
+  return sendSuccess(res, { sent: true });
+}
+
+/** POST /auth/otp/email/verify (authenticated) — confirm the emailed code. */
+export async function verifyEmailOtp(req, res) {
+  await authService.verifyEmailOtp(req.user.id, req.body.code);
+  return sendSuccess(res, { verified: true });
+}
+
 /** POST /auth/password/forgot */
 export async function forgotPassword(req, res) {
   await authService.forgotPassword(req.body.email);
@@ -115,6 +127,8 @@ export default {
   me,
   sendPhoneOtp,
   verifyPhoneOtp,
+  sendEmailOtp,
+  verifyEmailOtp,
   forgotPassword,
   resetPassword,
   changePassword,

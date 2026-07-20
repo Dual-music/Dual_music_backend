@@ -38,6 +38,9 @@ authRouter.get('/me', authenticate(), authController.me);
 authRouter.post('/otp/phone/send', authenticate(), otpLimiter, authController.sendPhoneOtp);
 authRouter.post('/otp/phone/verify', authenticate(), validate(schemas.verifyOtpSchema), authController.verifyPhoneOtp);
 
+authRouter.post('/otp/email/send', authenticate(), otpLimiter, authController.sendEmailOtp);
+authRouter.post('/otp/email/verify', authenticate(), validate(schemas.verifyOtpSchema), authController.verifyEmailOtp);
+
 authRouter.post('/password/forgot', otpLimiter, validate(schemas.forgotPasswordSchema), authController.forgotPassword);
 authRouter.post('/password/reset', validate(schemas.resetPasswordSchema), authController.resetPassword);
 authRouter.post('/password/change', authenticate(), validate(schemas.changePasswordSchema), authController.changePassword);

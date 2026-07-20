@@ -5,7 +5,6 @@ import { db } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { hashPassword, verifyPassword } from '../utils/password.js';
 
-import { sendEmail } from './messaging.service.js';
 import { sendOtp, verifyOtp } from './otp.service.js';
 import {
   blacklistAccessToken,
@@ -105,7 +104,14 @@ async function provisionUserRecords(tx, user, { fullName, countryCode, phoneCoun
     { transaction: tx },
   );
 
-  await db.UserRole.create({ user_id: user.id, role: 'fan' }, { transaction: tx });
+  // Rôles par défaut : 'fan'. Bootstrap : le TOUT PREMIER compte (aucun admin encore
+  // en base) devient automatiquement 'admin'.
+  const roles = ['fan'];
+  const adminCount = await db.UserRole.count({ where: { role: 'admin' }, transaction: tx });
+  if (adminCount === 0) roles.push('admin');
+  for (const role of roles) {
+    await db.UserRole.create({ user_id: user.id, role }, { transaction: tx });
+  }
 
   const welcomeCredits = await getWelcomeCredits(tx);
   await db.UserWallet.create({ user_id: user.id, balance: welcomeCredits }, { transaction: tx });
@@ -137,6 +143,8 @@ async function provisionUserRecords(tx, user, { fullName, countryCode, phoneCoun
       }
     }
   }
+
+  return { roles };
 }
 
 /**
@@ -160,6 +168,7 @@ export async function register(input, ctx = {}) {
 
   const passwordHash = await hashPassword(input.password);
 
+  let grantedRoles = ['fan'];
   const user = await db.sequelize.transaction(async (tx) => {
     let referrerId = null;
     if (input.referralCode) {
@@ -180,12 +189,13 @@ export async function register(input, ctx = {}) {
       { transaction: tx },
     );
 
-    await provisionUserRecords(tx, created, {
+    const provisioned = await provisionUserRecords(tx, created, {
       fullName: input.fullName,
       countryCode: input.countryCode,
       phoneCountryCode: input.phoneCountryCode,
       referrerId,
     });
+    grantedRoles = provisioned.roles;
     return created;
   });
 
@@ -195,15 +205,15 @@ export async function register(input, ctx = {}) {
       logger.warn({ err: err.message }, 'Failed to send signup OTP'),
     );
   }
-  sendEmail({
-    to: email,
-    subject: 'Bienvenue sur Dual Music 🎵',
-    html: `<p>Bienvenue ${input.fullName || ''} ! Votre compte Dual Music est prêt.</p>`,
-  }).catch(() => {});
+  // Envoie le code de vérification de l'email (validation d'inscription, non bloquante :
+  // l'utilisateur est déjà connecté et peut valider depuis l'app).
+  sendOtp({ userId: user.id, channel: 'email', destination: email, purpose: 'email_verify' }).catch((err) =>
+    logger.warn({ err: err.message }, 'Failed to send email verification OTP'),
+  );
 
   const tokens = await issueTokens(user, ctx);
   const profile = await db.Profile.findByPk(user.id);
-  return { user: serializeUser(user), profile, roles: ['fan'], ...tokens };
+  return { user: serializeUser(user), profile, roles: grantedRoles, ...tokens };
 }
 
 /**
@@ -287,6 +297,31 @@ export async function verifyPhoneOtp(userId, code) {
   if (!user?.phone) throw ApiError.badRequest('BAD_REQUEST');
   await verifyOtp({ destination: user.phone, code, purpose: 'phone_verify' });
   user.phone_verified = true;
+  await user.save();
+}
+
+/**
+ * Sends (or resends) an email-verification OTP to the user's email.
+ * @param {string} userId
+ * @returns {Promise<void>}
+ */
+export async function requestEmailOtp(userId) {
+  const user = await db.User.findByPk(userId);
+  if (!user?.email) throw ApiError.badRequest('BAD_REQUEST', { details: { email: 'missing' } });
+  await sendOtp({ userId, channel: 'email', destination: user.email, purpose: 'email_verify' });
+}
+
+/**
+ * Verifies an email OTP and marks the user's email as verified.
+ * @param {string} userId
+ * @param {string} code
+ * @returns {Promise<void>}
+ */
+export async function verifyEmailOtp(userId, code) {
+  const user = await db.User.findByPk(userId);
+  if (!user?.email) throw ApiError.badRequest('BAD_REQUEST');
+  await verifyOtp({ destination: user.email, code, purpose: 'email_verify' });
+  user.email_verified = true;
   await user.save();
 }
 
