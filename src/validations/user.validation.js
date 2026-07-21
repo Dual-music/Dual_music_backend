@@ -24,6 +24,8 @@ export const updateProfileSchema = {
     social_links: Joi.object().unknown(true),
     is_public: Joi.boolean(),
     country_code: Joi.string().max(4).uppercase(),
+    phone: Joi.string().max(32).allow('', null),
+    phone_country_code: Joi.string().max(6).allow('', null),
   }).min(1),
 };
 

@@ -53,7 +53,10 @@ export async function getPublicProfile(userId, viewerId = null) {
 }
 
 /** Fields a user may update on their own profile (mass-assignment whitelist). */
-const PROFILE_UPDATABLE = ['full_name', 'avatar_url', 'bio', 'social_links', 'is_public', 'country_code'];
+const PROFILE_UPDATABLE = [
+  'full_name', 'avatar_url', 'bio', 'social_links', 'is_public',
+  'country_code', 'phone', 'phone_country_code',
+];
 
 /**
  * Updates the authenticated user's profile.
