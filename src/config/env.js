@@ -58,6 +58,10 @@ const schema = Joi.object({
   LIVEKIT_API_SECRET: Joi.string().allow('').default(''),
 
   CINETPAY_API_KEY: Joi.string().allow('').default(''),
+  CINETPAY_API_PASSWORD: Joi.string().allow('').default(''),
+  CINETPAY_BASE_URL: Joi.string().allow('').default(''),
+  // Multi-pays (1 compte = 1 pays) : JSON { "CI": { "key": "...", "password": "..." }, ... }.
+  CINETPAY_ACCOUNTS: Joi.string().allow('').default(''),
   CINETPAY_SITE_ID: Joi.string().allow('').default(''),
   CINETPAY_SECRET_KEY: Joi.string().allow('').default(''),
   CINETPAY_NOTIFY_URL: Joi.string().allow('').default(''),
@@ -112,6 +116,12 @@ if (error) {
       error.details.map((d) => `  - ${d.message}`).join('\n'),
   );
   process.exit(1);
+}
+
+/** Parse un JSON d'environnement en objet, `{}` si vide/invalide. */
+function parseJsonSafe(raw) {
+  if (!raw || !String(raw).trim()) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
 }
 
 /**
@@ -171,7 +181,13 @@ export const config = Object.freeze({
   },
 
   cinetpay: {
+    // Nouvelle API v1 : api_key + api_password (clé sk_test_/sk_live_). Le compte par défaut
+    // sert de repli quand un pays n'a pas d'entrée dédiée dans `accounts`.
     apiKey: env.CINETPAY_API_KEY,
+    apiPassword: env.CINETPAY_API_PASSWORD,
+    baseUrl: env.CINETPAY_BASE_URL,
+    // Identifiants par pays (1 compte = 1 pays) : { CI: { key, password }, CM: {...}, ... }.
+    accounts: parseJsonSafe(env.CINETPAY_ACCOUNTS),
     siteId: env.CINETPAY_SITE_ID,
     secretKey: env.CINETPAY_SECRET_KEY,
     notifyUrl: env.CINETPAY_NOTIFY_URL,

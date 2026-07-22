@@ -126,9 +126,11 @@ export async function listCinetpayTransactions({ limit = 100 } = {}) {
  * @param {string} [params.phone]
  * @returns {Promise<{ paymentUrl: string, merchantTransactionId: string, credits: number }>}
  */
-export async function initCinetpay({ userId, amount, countryCode, phone }) {
+export async function initCinetpay({ userId, amount, countryCode, phone, paymentMethod }) {
   const country = await db.CinetpayCountry.findOne({ where: { country_code: countryCode, is_active: true } });
   if (!country) throw ApiError.badRequest('BAD_REQUEST', { details: { countryCode: 'unsupported' } });
+  // Opérateur Mobile Money : fourni par l'app, sinon 1er opérateur actif du pays.
+  const method = paymentMethod || country.operators?.[0]?.code || 'ALL';
 
   const currency = country.currency;
   const { credits } = await computeCreditsForRecharge(amount, currency, 'cinetpay');
@@ -143,24 +145,32 @@ export async function initCinetpay({ userId, amount, countryCode, phone }) {
     amount,
     currency,
     country_code: countryCode,
-    // `payment_method`/`phone_number` are NOT NULL: default the channel to ALL
-    // (CinetPay collects the actual method on the hosted page) and the phone to
-    // an empty string when the caller does not supply one.
-    payment_method: 'ALL',
+    payment_method: method,
     phone_number: phone ?? '',
     kind: 'payin',
     status: 'pending',
     credits_amount: credits,
   });
 
+  const profile = await db.Profile.findByPk(userId).catch(() => null);
+  const nameParts = String(profile?.full_name || '').trim().split(/\s+/).filter(Boolean);
   const init = await cinetpay.initPayment({
+    countryCode,
     transactionId: merchantId,
     amount,
     currency,
-    description: `Recharge ${credits} crédits`,
+    paymentMethod: method,
+    notifyToken,
     notifyUrl: cinetpayNotifyUrl(),
-    returnUrl: returnUrl(),
-    customer: { phone },
+    successUrl: returnUrl(),
+    failedUrl: returnUrl(),
+    designation: `Recharge ${credits} crédits`,
+    customer: {
+      email: profile?.email || undefined,
+      firstName: nameParts[0],
+      lastName: nameParts.slice(1).join(' ') || undefined,
+      phone,
+    },
   });
 
   await db.CinetpayTransaction.update(
@@ -263,7 +273,9 @@ export async function initStripeSubscription({ userId, plan }) {
  * @returns {Promise<{ merchantTransactionId: string, accepted: boolean, status: string }>}
  */
 export async function verifyCinetpayTransaction(merchantId) {
-  const check = await cinetpay.checkPayment(merchantId);
+  const tx = await db.CinetpayTransaction.findOne({ where: { merchant_transaction_id: merchantId } });
+  if (!tx) throw ApiError.notFound('NOT_FOUND');
+  const check = await cinetpay.checkPayment({ countryCode: tx.country_code, transactionId: merchantId });
   return { merchantTransactionId: merchantId, accepted: check.accepted, status: check.status };
 }
 
@@ -285,7 +297,7 @@ export async function handleCinetpayWebhook(body) {
   if (!tx) throw ApiError.notFound('NOT_FOUND');
   await tx.update({ raw_webhook_payload: body, updated_at: new Date() });
 
-  const check = await cinetpay.checkPayment(merchantId);
+  const check = await cinetpay.checkPayment({ countryCode: tx.country_code, transactionId: merchantId });
   if (!check.accepted) {
     logger.warn({ merchantId, status: check.status }, 'CinetPay payment not accepted');
     return { ok: false };

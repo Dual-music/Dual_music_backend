@@ -11,6 +11,9 @@ export const cinetpayInitSchema = {
     amount: Joi.number().integer().min(1).required(),
     countryCode: Joi.string().max(4).uppercase().required(),
     phone: Joi.string().max(20).allow('', null),
+    // Opérateur Mobile Money (code d'un des `operators` du pays) ; optionnel : le
+    // serveur retombe sur le 1er opérateur actif du pays si absent.
+    paymentMethod: Joi.string().max(32).allow('', null),
   }),
 };
 
