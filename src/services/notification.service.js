@@ -158,6 +158,34 @@ export async function unsubscribePush(userId, endpoint) {
   return { removed: deleted > 0 };
 }
 
+/**
+ * Enregistre (upsert) un jeton d'appareil FCM (mobile) pour le push.
+ * Réutilise la table `push_subscriptions` : le jeton est stocké dans `endpoint`, avec
+ * `p256dh='fcm'` comme marqueur (distinguer FCM des abonnements Web Push).
+ *
+ * @param {string} userId
+ * @param {string} token Jeton FCM de l'appareil.
+ * @returns {Promise<{ registered: boolean }>}
+ */
+export async function registerFcmToken(userId, token) {
+  const existing = await db.PushSubscription.findOne({ where: { endpoint: token } });
+  if (existing) {
+    existing.user_id = userId;
+    existing.p256dh = 'fcm';
+    existing.auth = 'fcm';
+    await existing.save();
+  } else {
+    await db.PushSubscription.create({ user_id: userId, endpoint: token, p256dh: 'fcm', auth: 'fcm' });
+  }
+  return { registered: true };
+}
+
+/** Supprime un jeton FCM (déconnexion / désinscription). */
+export async function unregisterFcmToken(userId, token) {
+  const deleted = await db.PushSubscription.destroy({ where: { user_id: userId, endpoint: token } });
+  return { removed: deleted > 0 };
+}
+
 export default {
   listNotifications,
   unreadCount,
@@ -168,4 +196,6 @@ export default {
   updateEmailPreferences,
   subscribePush,
   unsubscribePush,
+  registerFcmToken,
+  unregisterFcmToken,
 };

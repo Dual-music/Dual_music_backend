@@ -44,4 +44,9 @@ export const unsubscribePush = {
   body: Joi.object({ endpoint: Joi.string().uri().max(2048).required() }),
 };
 
-export default { listQuery, idParam, updateEmailPrefs, subscribePush, unsubscribePush };
+/** POST/DELETE /notifications/devices — jeton FCM (mobile). */
+export const deviceToken = {
+  body: Joi.object({ token: Joi.string().min(10).max(4096).required() }),
+};
+
+export default { listQuery, idParam, updateEmailPrefs, subscribePush, unsubscribePush, deviceToken };

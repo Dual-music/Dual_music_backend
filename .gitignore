@@ -11,3 +11,6 @@ logs/
 .vscode/
 tmp/
 uploads/
+
+# Firebase service account (secret — ne jamais committer)
+firebase-service-account.json

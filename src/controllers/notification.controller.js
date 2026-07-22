@@ -52,6 +52,16 @@ export async function unsubscribePush(req, res) {
   return sendSuccess(res, await notificationService.unsubscribePush(req.user.id, req.body.endpoint));
 }
 
+/** POST /notifications/devices — enregistre un jeton FCM (mobile). */
+export async function registerDevice(req, res) {
+  return sendSuccess(res, await notificationService.registerFcmToken(req.user.id, req.body.token), { status: 201 });
+}
+
+/** DELETE /notifications/devices — supprime un jeton FCM. */
+export async function unregisterDevice(req, res) {
+  return sendSuccess(res, await notificationService.unregisterFcmToken(req.user.id, req.body.token));
+}
+
 export default {
   list,
   unreadCount,
@@ -62,4 +72,6 @@ export default {
   updateEmailPreferences,
   subscribePush,
   unsubscribePush,
+  registerDevice,
+  unregisterDevice,
 };

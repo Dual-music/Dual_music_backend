@@ -26,6 +26,10 @@ notificationRouter.put('/preferences/email', validate(v.updateEmailPrefs), notif
 notificationRouter.post('/push/subscribe', validate(v.subscribePush), notificationController.subscribePush);
 notificationRouter.delete('/push/subscribe', validate(v.unsubscribePush), notificationController.unsubscribePush);
 
+// Jetons d'appareils FCM (mobile).
+notificationRouter.post('/devices', validate(v.deviceToken), notificationController.registerDevice);
+notificationRouter.delete('/devices', validate(v.deviceToken), notificationController.unregisterDevice);
+
 notificationRouter.post('/read-all', notificationController.markAllRead);
 notificationRouter.post('/:id/read', validate(v.idParam), notificationController.markRead);
 notificationRouter.delete('/:id', validate(v.idParam), notificationController.remove);
