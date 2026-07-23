@@ -81,6 +81,11 @@ export const googleCallbackSchema = {
   }),
 };
 
+/** POST /auth/oauth/google/native */
+export const googleNativeSchema = {
+  body: Joi.object({ idToken: Joi.string().min(10).max(8192).required() }),
+};
+
 export default {
   registerSchema,
   loginSchema,
@@ -91,4 +96,5 @@ export default {
   resetPasswordSchema,
   changePasswordSchema,
   googleCallbackSchema,
+  googleNativeSchema,
 };

@@ -1,6 +1,6 @@
 import { config } from '../config/env.js';
 import * as authService from '../services/auth.service.js';
-import { buildGoogleAuthUrl, handleGoogleCallback } from '../services/oauth.service.js';
+import { buildGoogleAuthUrl, handleGoogleCallback, handleGoogleIdToken } from '../services/oauth.service.js';
 import { randomToken } from '../utils/crypto.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 
@@ -119,6 +119,12 @@ export async function googleCallback(req, res) {
   return res.redirect(url.toString());
 }
 
+/** POST /auth/oauth/google/native — connexion via ID token Google (app mobile). */
+export async function googleNative(req, res) {
+  const result = await handleGoogleIdToken(req.body.idToken, reqCtx(req));
+  return sendSuccess(res, result);
+}
+
 export default {
   register,
   login,
@@ -134,4 +140,5 @@ export default {
   changePassword,
   googleStart,
   googleCallback,
+  googleNative,
 };

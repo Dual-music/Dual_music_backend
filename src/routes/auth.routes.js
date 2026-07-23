@@ -47,5 +47,6 @@ authRouter.post('/password/change', authenticate(), validate(schemas.changePassw
 
 authRouter.get('/oauth/google', authController.googleStart);
 authRouter.get('/oauth/google/callback', validate(schemas.googleCallbackSchema), authController.googleCallback);
+authRouter.post('/oauth/google/native', validate(schemas.googleNativeSchema), authController.googleNative);
 
 export default authRouter;

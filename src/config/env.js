@@ -52,6 +52,9 @@ const schema = Joi.object({
   GOOGLE_CLIENT_ID: Joi.string().allow('').default(''),
   GOOGLE_CLIENT_SECRET: Joi.string().allow('').default(''),
   GOOGLE_REDIRECT_URI: Joi.string().allow('').default(''),
+  // Audiences supplémentaires acceptées pour l'ID token natif (Web client IDs Firebase),
+  // séparées par des virgules. Le GOOGLE_CLIENT_ID est déjà inclus automatiquement.
+  GOOGLE_ALLOWED_AUDIENCES: Joi.string().allow('').default(''),
 
   LIVEKIT_URL: Joi.string().allow('').default(''),
   LIVEKIT_API_KEY: Joi.string().allow('').default(''),
@@ -62,8 +65,6 @@ const schema = Joi.object({
   CINETPAY_BASE_URL: Joi.string().allow('').default(''),
   // Multi-pays (1 compte = 1 pays) : JSON { "CI": { "key": "...", "password": "..." }, ... }.
   CINETPAY_ACCOUNTS: Joi.string().allow('').default(''),
-  CINETPAY_SITE_ID: Joi.string().allow('').default(''),
-  CINETPAY_SECRET_KEY: Joi.string().allow('').default(''),
   CINETPAY_NOTIFY_URL: Joi.string().allow('').default(''),
   CINETPAY_RETURN_URL: Joi.string().allow('').default(''),
 
@@ -172,6 +173,10 @@ export const config = Object.freeze({
     clientId: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
     redirectUri: env.GOOGLE_REDIRECT_URI,
+    // Audiences valides pour l'ID token natif : le client web + les extras déclarés.
+    allowedAudiences: [env.GOOGLE_CLIENT_ID, ...String(env.GOOGLE_ALLOWED_AUDIENCES).split(',')]
+      .map((s) => s.trim())
+      .filter(Boolean),
   },
 
   livekit: {
@@ -188,8 +193,6 @@ export const config = Object.freeze({
     baseUrl: env.CINETPAY_BASE_URL,
     // Identifiants par pays (1 compte = 1 pays) : { CI: { key, password }, CM: {...}, ... }.
     accounts: parseJsonSafe(env.CINETPAY_ACCOUNTS),
-    siteId: env.CINETPAY_SITE_ID,
-    secretKey: env.CINETPAY_SECRET_KEY,
     notifyUrl: env.CINETPAY_NOTIFY_URL,
     returnUrl: env.CINETPAY_RETURN_URL,
   },

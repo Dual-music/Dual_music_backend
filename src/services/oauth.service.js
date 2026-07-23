@@ -103,4 +103,69 @@ export async function handleGoogleCallback(code, ctx = {}) {
   return { user: serializeUser(user), ...tokens };
 }
 
-export default { buildGoogleAuthUrl, handleGoogleCallback };
+const GOOGLE_TOKENINFO = 'https://oauth2.googleapis.com/tokeninfo';
+
+/**
+ * Vérifie un ID token Google (émis côté app par Credential Manager) et renvoie le profil.
+ *
+ * Contrôles : émetteur `accounts.google.com`, audience ∈ `config.google.allowedAudiences`
+ * (le **Web client ID** Firebase passé comme `serverClientId` par l'app), présence de l'email.
+ *
+ * @param {string} idToken
+ * @returns {Promise<{ email: string, sub: string, name?: string }>}
+ */
+async function verifyGoogleIdToken(idToken) {
+  const audiences = config.google.allowedAudiences;
+  if (!audiences.length) throw ApiError.internal('OAUTH_NOT_CONFIGURED');
+
+  const res = await fetch(`${GOOGLE_TOKENINFO}?id_token=${encodeURIComponent(idToken)}`);
+  if (!res.ok) throw ApiError.unauthorized('INVALID_TOKEN');
+  const claims = await res.json().catch(() => ({}));
+
+  const iss = claims.iss || '';
+  if (iss !== 'accounts.google.com' && iss !== 'https://accounts.google.com') {
+    throw ApiError.unauthorized('INVALID_TOKEN');
+  }
+  if (!audiences.includes(claims.aud)) throw ApiError.unauthorized('INVALID_TOKEN');
+  if (!claims.email) throw ApiError.unauthorized('INVALID_TOKEN');
+
+  return { email: claims.email, sub: claims.sub, name: claims.name };
+}
+
+/**
+ * Connexion Google **native** : vérifie l'ID token, résout/lie/provisionne le compte
+ * (même logique que le callback web), puis émet notre paire de JWT.
+ *
+ * @param {string} idToken - ID token Google fourni par l'app.
+ * @param {object} [ctx] - Contexte de requête (IP/UA) pour l'émission des tokens.
+ * @returns {Promise<{ user: object, accessToken: string, refreshToken: string }>}
+ */
+export async function handleGoogleIdToken(idToken, ctx = {}) {
+  const profile = await verifyGoogleIdToken(idToken);
+  const email = profile.email.trim().toLowerCase();
+
+  const user = await db.sequelize.transaction(async (tx) => {
+    const link = await db.OAuthAccount.findOne({
+      where: { provider: 'google', provider_account_id: profile.sub },
+      transaction: tx,
+    });
+    if (link) return db.User.findByPk(link.user_id, { transaction: tx });
+
+    let account = await db.User.findOne({ where: { email }, transaction: tx });
+    if (!account) {
+      account = await db.User.create({ email, email_verified: true }, { transaction: tx });
+      await provisionUserRecords(tx, account, { fullName: profile.name, countryCode: 'FR' });
+    }
+    await db.OAuthAccount.create(
+      { user_id: account.id, provider: 'google', provider_account_id: profile.sub },
+      { transaction: tx },
+    );
+    return account;
+  });
+
+  if (user.is_banned) throw ApiError.forbidden('ACCOUNT_BANNED');
+  const tokens = await issueTokens(user, ctx);
+  return { user: serializeUser(user), ...tokens };
+}
+
+export default { buildGoogleAuthUrl, handleGoogleCallback, handleGoogleIdToken };
