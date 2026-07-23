@@ -93,7 +93,9 @@ async function provisionUserRecords(tx, user, { fullName, countryCode, phoneCoun
     {
       id: user.id,
       email: user.email,
-      full_name: fullName || user.email,
+      // Ne PAS retomber sur l'email : sinon l'email s'affiche comme « nom ». Laisser
+      // vide tant que l'utilisateur n'a pas renseigné son nom (étape profil / web).
+      full_name: fullName || null,
       phone: user.phone ?? null,
       country_code: countryCode || 'FR',
       phone_country_code: phoneCountryCode || user.phone_country_code || '+33',
