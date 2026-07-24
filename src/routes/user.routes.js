@@ -34,6 +34,9 @@ userRouter.put('/me/ui-preferences', authenticate(), validate(schemas.uiPreferen
 userRouter.get('/me/stats', authenticate(), userController.myStats);
 userRouter.put('/me/preferences/currency', authenticate(), validate(schemas.setCurrencySchema), userController.setCurrency);
 userRouter.patch('/me', authenticate(), validate(schemas.updateProfileSchema), userController.updateMe);
+// Suppression de compte à effet différé (grâce 20 jours) + annulation.
+userRouter.post('/me/deletion', authenticate(), userController.requestDeletion);
+userRouter.delete('/me/deletion', authenticate(), userController.cancelDeletion);
 
 userRouter.get('/:id', optionalAuth(), validate(schemas.userIdParam), userController.getProfile);
 userRouter.get('/:id/badges', validate(schemas.userIdParam), userController.badges);

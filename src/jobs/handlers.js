@@ -5,6 +5,7 @@ import { logger } from '../config/logger.js';
 import { db } from '../models/index.js';
 import { emitToRoom, roomName } from '../realtime/bus.js';
 import { computeCreditsForRecharge } from '../services/payments/pricing.service.js';
+import { purgeExpiredAccounts } from '../services/user.service.js';
 import { checkPayment as cinetpayCheck } from '../services/payments/providers/cinetpay.client.js';
 import { callProcedure } from '../utils/procedures.js';
 
@@ -328,6 +329,8 @@ export async function adminDailyReport() {
  */
 export const JOB_DEFINITIONS = [
   { name: 'refresh-exchange-rates', handler: refreshExchangeRates, cron: '0 4 * * *' },
+  // Purge quotidienne (03:15 UTC) des comptes dont le délai de grâce de 20 j est écoulé.
+  { name: 'purge-deleted-accounts', handler: purgeExpiredAccounts, cron: '15 3 * * *' },
   { name: 'event-reminders', handler: sendEventReminders, cron: '*/5 * * * *' },
   { name: 'close-competitions', handler: closeCompetitions, cron: '*/2 * * * *' },
   { name: 'retry-webhooks', handler: retryWebhooks, cron: '*/3 * * * *' },

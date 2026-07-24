@@ -75,6 +75,59 @@ export async function updateOwnProfile(userId, patch) {
   return profile;
 }
 
+/** Délai de grâce (jours) avant la suppression définitive d'un compte. */
+const DELETION_GRACE_DAYS = 20;
+
+/**
+ * Programme la suppression du compte à effet différé (now + 20 jours). Réversible via
+ * {@link cancelAccountDeletion} tant que la date n'est pas atteinte.
+ * @param {string} userId
+ * @returns {Promise<{ deletionScheduledAt: Date }>}
+ */
+export async function requestAccountDeletion(userId) {
+  const user = await db.User.findByPk(userId);
+  if (!user) throw ApiError.notFound('NOT_FOUND');
+  const scheduled = new Date(Date.now() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
+  user.deletion_scheduled_at = scheduled;
+  user.updated_at = new Date();
+  await user.save();
+  return { deletionScheduledAt: scheduled };
+}
+
+/**
+ * Annule une suppression programmée (le compte redevient actif).
+ * @param {string} userId
+ * @returns {Promise<{ cancelled: boolean }>}
+ */
+export async function cancelAccountDeletion(userId) {
+  const user = await db.User.findByPk(userId);
+  if (!user) throw ApiError.notFound('NOT_FOUND');
+  user.deletion_scheduled_at = null;
+  user.updated_at = new Date();
+  await user.save();
+  return { cancelled: true };
+}
+
+/**
+ * Purge les comptes dont la date de suppression est atteinte : le compte est **banni**
+ * (connexion bloquée) et marqué supprimé. L'effacement dur des données (RGPD) reste un
+ * traitement admin dédié — le bannissement évite les cascades de clés étrangères risquées.
+ * @returns {Promise<{ purged: number }>}
+ */
+export async function purgeExpiredAccounts() {
+  const now = new Date();
+  const expired = await db.User.findAll({ where: { deletion_scheduled_at: { [Op.lte]: now } } });
+  for (const user of expired) {
+    if (user.is_banned) continue;
+    user.is_banned = true;
+    user.banned_at = now;
+    user.banned_reason = 'Compte supprimé par l’utilisateur (délai de grâce écoulé).';
+    user.updated_at = now;
+    await user.save();
+  }
+  return { purged: expired.length };
+}
+
 /**
  * Sets the user's preferred display currency (upsert).
  * Mirrors `supabase.rpc('set_user_currency', { p_currency })`.

@@ -32,6 +32,9 @@ export function defineUser(sequelize) {
       banned_at: { type: DataTypes.DATE, allowNull: true },
       banned_reason: { type: DataTypes.TEXT, allowNull: true },
       last_login_at: { type: DataTypes.DATE, allowNull: true },
+      // Suppression de compte à effet différé : date de purge planifiée (now + 20 j).
+      // Nulle = compte actif. L'utilisateur peut annuler tant que la date n'est pas atteinte.
+      deletion_scheduled_at: { type: DataTypes.DATE, allowNull: true },
       created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
       updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
     },

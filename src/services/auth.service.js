@@ -43,6 +43,7 @@ function serializeUser(user) {
     phoneVerified: user.phone_verified,
     emailVerified: user.email_verified,
     isBanned: user.is_banned,
+    deletionScheduledAt: user.deletion_scheduled_at ?? null,
   };
 }
 

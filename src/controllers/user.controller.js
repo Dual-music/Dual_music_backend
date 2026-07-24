@@ -74,6 +74,16 @@ export async function setUiPreferences(req, res) {
   return sendSuccess(res, await userService.setUiPreferences(req.user.id, req.body));
 }
 
+/** POST /users/me/deletion — programme la suppression du compte (grâce 20 jours). */
+export async function requestDeletion(req, res) {
+  return sendSuccess(res, await userService.requestAccountDeletion(req.user.id));
+}
+
+/** DELETE /users/me/deletion — annule la suppression programmée. */
+export async function cancelDeletion(req, res) {
+  return sendSuccess(res, await userService.cancelAccountDeletion(req.user.id));
+}
+
 export default {
   displayProfiles,
   getProfile,
@@ -87,4 +97,6 @@ export default {
   badges,
   getUiPreferences,
   setUiPreferences,
+  requestDeletion,
+  cancelDeletion,
 };
