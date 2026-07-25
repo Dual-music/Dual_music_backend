@@ -34,6 +34,28 @@ function getTransporter() {
   return transporter;
 }
 
+/** Échappe le HTML et convertit les sauts de ligne en `<br/>` (pour un corps texte brut). */
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\n/g, '<br/>');
+}
+
+/**
+ * En-tête de marque : logo (si `MAIL_LOGO_URL` configuré — URL publique absolue requise par
+ * les clients mail) sinon le nom stylé en repli.
+ */
+function brandHeader() {
+  const logo = config.mail.logoUrl;
+  if (logo) {
+    return `<img src="${logo}" alt="Dual Music" height="44" style="height:44px;display:block;border:0;outline:none;text-decoration:none;" />`;
+  }
+  return `<span style="font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">🎵 Dual Music</span>`;
+}
+
 /**
  * Enrobe le contenu HTML d'un email dans le gabarit de marque Dual Music
  * (en-tête + pied de page + note de sécurité). Compatible clients mail (tables + styles inline).
@@ -51,7 +73,7 @@ function wrapEmail(html) {
             <tbody>
               <tr>
                 <td align="center" style="background:linear-gradient(135deg,#7c3aed,#db2777);padding:22px;">
-                  <span style="font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">🎵 Dual Music</span>
+                  ${brandHeader()}
                 </td>
               </tr>
               <tr>
@@ -88,7 +110,10 @@ function wrapEmail(html) {
  */
 export async function sendEmail({ to, subject, html, text }) {
   try {
-    await getTransporter().sendMail({ from: config.mail.from, to, subject, html: wrapEmail(html), text: text || undefined });
+    // Beaucoup d'appelants ne fournissent que `text` (notifyUser). On dérive alors le corps
+    // HTML du texte pour éviter un « undefined » dans le gabarit.
+    const body = html ?? `<p style="margin:0;">${escapeHtml(text || '')}</p>`;
+    await getTransporter().sendMail({ from: config.mail.from, to, subject, html: wrapEmail(body), text: text || undefined });
     logger.info({ to, subject }, 'Email sent');
   } catch (err) {
     logger.error({ err: err.message, to, subject }, 'Email send failed');

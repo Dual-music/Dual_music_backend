@@ -95,6 +95,8 @@ const schema = Joi.object({
   SMTP_USER: Joi.string().allow('').default(''),
   SMTP_PASSWORD: Joi.string().allow('').default(''),
   SMTP_SECURE: Joi.boolean().default(false),
+  // URL publique absolue du logo affiché en en-tête des emails (sinon repli sur le texte).
+  MAIL_LOGO_URL: Joi.string().allow('').default(''),
   RESEND_API_KEY: Joi.string().allow('').default(''),
 
   VAPID_PUBLIC_KEY: Joi.string().allow('').default(''),
@@ -230,6 +232,7 @@ export const config = Object.freeze({
     smtpUser: env.SMTP_USER,
     smtpPassword: env.SMTP_PASSWORD,
     smtpSecure: env.SMTP_SECURE,
+    logoUrl: env.MAIL_LOGO_URL,
     resendApiKey: env.RESEND_API_KEY,
   },
 
