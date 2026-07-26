@@ -63,6 +63,9 @@ adminRouter.get('/revenue-distributions', requireRole('admin'), validate(v.reven
 // --- Announcements -----------------------------------------------------------
 adminRouter.post('/announcements', requireRole('admin'), validate(v.announcement), adminController.broadcastAnnouncement);
 
+// --- System (read-only status) -----------------------------------------------
+adminRouter.get('/system/storage', requireRole('admin'), adminController.storageInfo);
+
 // --- Platform settings -------------------------------------------------------
 adminRouter.get('/settings', requireRole('admin'), adminController.getSettings);
 adminRouter.get('/settings/:key', requireRole('admin'), validate(v.keyParam), adminController.getSetting);

@@ -14,6 +14,7 @@ import { globalLimiter } from './middlewares/rateLimit.js';
 import { requestId } from './middlewares/requestId.js';
 import { docsRouter } from './openapi/docs.routes.js';
 import { apiRouter } from './routes/index.js';
+import { mediaRouter } from './routes/media.routes.js';
 
 /**
  * @file Express application factory.
@@ -85,6 +86,10 @@ export function createApp() {
   // API docs: OpenAPI spec + self-contained Swagger explorer (before the API
   // router so `/docs` and `/api/v1/openapi.json` resolve without auth).
   app.use(docsRouter);
+
+  // Public media served from local disk (only active under STORAGE_DRIVER=local).
+  // Mounted at the app root so `publicUrl()` links stay outside the API prefix.
+  app.use('/media', mediaRouter);
 
   app.use('/api/v1', apiRouter);
 

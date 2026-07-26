@@ -1,4 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Force an *unconfigured* storage driver so the 503 guard is exercised
+// deterministically, independent of whatever the developer's local `.env`
+// happens to set (e.g. real R2 credentials). Full confirm flow is covered in
+// integration against real storage.
+vi.mock('../src/services/storage/index.js', () => ({
+  getStorageDriver: () => ({ name: 's3', isConfigured: () => false }),
+}));
 
 import { scanBuffer } from '../src/services/clamav.service.js';
 import { confirmUpload } from '../src/services/upload.service.js';

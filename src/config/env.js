@@ -76,6 +76,15 @@ const schema = Joi.object({
   STRIPE_PRICE_PRO: Joi.string().allow('').default(''),
   STRIPE_PRICE_PREMIUM: Joi.string().allow('').default(''),
 
+  // Pilote de stockage des médias : `s3` (Cloudflare R2 / AWS S3, presign direct)
+  // ou `local` (disque du backend, servi via /media). Décision d'infrastructure,
+  // fixée au déploiement — voir docs/STORAGE.md.
+  STORAGE_DRIVER: Joi.string().valid('s3', 'local').default('s3'),
+  // Driver local : dossier de stockage sur disque + URL publique de base facultative
+  // (repli sur API_BASE_URL/media si vide).
+  LOCAL_STORAGE_DIR: Joi.string().default('storage/uploads'),
+  LOCAL_PUBLIC_BASE_URL: Joi.string().allow('').default(''),
+
   S3_ENDPOINT: Joi.string().allow('').default(''),
   S3_REGION: Joi.string().default('auto'),
   S3_BUCKET: Joi.string().allow('').default('duel-music'),
@@ -206,6 +215,15 @@ export const config = Object.freeze({
     webhookSecret: env.STRIPE_WEBHOOK_SECRET,
     pricePro: env.STRIPE_PRICE_PRO,
     pricePremium: env.STRIPE_PRICE_PREMIUM,
+  },
+
+  storage: {
+    // Pilote actif : 's3' (R2/S3) ou 'local' (disque backend).
+    driver: env.STORAGE_DRIVER,
+    local: {
+      dir: env.LOCAL_STORAGE_DIR,
+      publicBaseUrl: env.LOCAL_PUBLIC_BASE_URL,
+    },
   },
 
   s3: {

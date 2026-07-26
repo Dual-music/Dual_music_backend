@@ -1,10 +1,20 @@
 import * as adminService from '../services/admin.service.js';
+import { storageInfo as getStorageInfo } from '../services/storage/index.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 
 /**
  * @file Admin HTTP controllers (thin).
  * @module controllers/admin.controller
  */
+
+/**
+ * GET /admin/system/storage — read-only media-storage status for the console.
+ * Reports the active driver + whether it is configured (no secrets exposed).
+ * Storage is chosen at deploy time via `STORAGE_DRIVER`, so this is informational.
+ */
+export async function storageInfo(_req, res) {
+  return sendSuccess(res, getStorageInfo());
+}
 
 /** GET /admin/stats */
 export async function stats(_req, res) {

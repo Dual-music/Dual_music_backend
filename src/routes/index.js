@@ -24,6 +24,7 @@ import { referralRouter } from './referral.routes.js';
 import { replayRouter } from './replay.routes.js';
 import { settingsRouter } from './settings.routes.js';
 import { sponsorRouter } from './sponsor.routes.js';
+import { localStorageRouter } from './localStorage.routes.js';
 import { subscriptionRouter } from './subscription.routes.js';
 import { uploadRouter } from './upload.routes.js';
 import { userRouter } from './user.routes.js';
@@ -80,6 +81,9 @@ apiRouter.use('/notifications', notificationRouter);
 apiRouter.use('/leaderboards', leaderboardRouter);
 apiRouter.use('/sponsors', sponsorRouter);
 apiRouter.use('/replays', replayRouter);
+// Token-authorized local transport — MUST precede the authenticated `/uploads`
+// router so unauthenticated PUT/GET-by-token requests aren't rejected by its auth.
+apiRouter.use('/uploads/local', localStorageRouter);
 apiRouter.use('/uploads', uploadRouter);
 apiRouter.use('/withdrawals', withdrawalRouter);
 apiRouter.use('/subscriptions', subscriptionRouter);

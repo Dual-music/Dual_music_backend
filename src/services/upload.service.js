@@ -1,26 +1,29 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { nanoid } from 'nanoid';
 
 import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import { getS3, publicUrlFor } from '../config/storage.js';
 import { scanBuffer } from '../services/clamav.service.js';
+import { getStorageDriver } from '../services/storage/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { detectFileType } from '../utils/fileType.js';
 
 /**
- * @file Uploads domain service — server-side presigned URLs for S3-compatible
- * storage. The client requests a presigned `PUT` for a given category, uploads
- * the file directly to S3 (offloading bandwidth from the API), then persists
- * the returned public URL on the owning resource (avatar, replay, sponsor…).
+ * @file Uploads domain service — issues "presigned" upload URLs for the active
+ * storage driver ({@link module:services/storage}: Cloudflare R2 / S3, or the
+ * local backend disk). The client uploads the file directly to the returned
+ * URL (offloading bandwidth from the API), then confirms the object.
+ *
+ * The service owns the **policy** (per-category MIME allowlist + size cap,
+ * server-generated keys, magic-byte re-validation, optional antivirus); the
+ * driver owns the **transport** (where bytes live, how URLs are signed). This
+ * keeps the S3↔local choice a single deployment switch (`STORAGE_DRIVER`)
+ * without duplicating the security checks.
  *
  * Security: the caller-declared `contentType` is validated against a per-
- * category allowlist and pinned into the signature, so the object can only be
- * stored with an approved MIME type; object keys are server-generated
- * (nanoid + sanitized extension) to prevent path traversal / overwrite.
- * Byte-level magic-number validation would require proxying the bytes through
- * the API and is documented as a follow-up (see docs/DECISIONS.md).
+ * category allowlist and pinned into the upload; object keys are server-
+ * generated (nanoid + sanitized extension) to prevent path traversal /
+ * overwrite; on confirm the object's **real** type is re-checked by its magic
+ * bytes independent of the declared Content-Type.
  *
  * @module services/upload.service
  */
@@ -41,6 +44,20 @@ const CATEGORIES = {
   attachment: { prefix: 'uploads/attachments', kinds: ['image', 'pdf'], maxBytes: 10 * MB },
 };
 
+/** Object-key prefixes of categories that must never be served publicly. */
+export const PRIVATE_PREFIXES = Object.values(CATEGORIES)
+  .filter((c) => c.private)
+  .map((c) => c.prefix);
+
+/**
+ * Whether an object key belongs to a private category (blocked from `/media`).
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isPrivateKey(key) {
+  return PRIVATE_PREFIXES.some((p) => key.startsWith(`${p}/`));
+}
+
 /** MIME group detector. @param {string} contentType @returns {string|null} */
 function mimeKind(contentType) {
   if (/^image\//.test(contentType)) return 'image';
@@ -56,20 +73,20 @@ function safeExt(filename) {
 }
 
 /**
- * Issues a presigned upload (`PUT`) URL for a category.
+ * Issues a "presigned" upload (`PUT`) URL for a category.
  *
  * @param {object} params
  * @param {string} params.userId       - Owner (namespaces the key).
  * @param {string} params.category     - One of {@link CATEGORIES}.
  * @param {string} params.filename     - Original filename (for extension only).
- * @param {string} params.contentType  - Declared MIME type (pinned into the signature).
+ * @param {string} params.contentType  - Declared MIME type (pinned into the upload).
  * @param {number} [params.size]       - Byte size, validated against the cap.
  * @returns {Promise<{ key: string, uploadUrl: string, publicUrl: string, expiresIn: number, headers: Record<string,string> }>}
  * @throws {ApiError} 503 storage disabled · 400 invalid category/type · 413 too large.
  */
 export async function presignUpload({ userId, category, filename, contentType, size }) {
-  const s3 = getS3();
-  if (!s3) throw new ApiError(503, 'STORAGE_UNAVAILABLE', { message: 'Storage is not configured' });
+  const driver = getStorageDriver();
+  if (!driver.isConfigured()) throw new ApiError(503, 'STORAGE_UNAVAILABLE', { message: 'Storage is not configured' });
 
   const cat = CATEGORIES[category];
   if (!cat) throw ApiError.badRequest('VALIDATION_ERROR', { details: { category } });
@@ -83,26 +100,19 @@ export async function presignUpload({ userId, category, filename, contentType, s
   }
 
   const key = `${cat.prefix}/${userId}/${nanoid(21)}${safeExt(filename)}`;
-  const command = new PutObjectCommand({
-    Bucket: config.s3.bucket,
-    Key: key,
-    ContentType: contentType,
-    ...(cat.private ? { ACL: 'private' } : {}),
-  });
-  const expiresIn = config.s3.presignExpires;
-  const uploadUrl = await getSignedUrl(s3, command, { expiresIn });
+  const { uploadUrl, headers } = await driver.presignPut({ key, contentType, isPrivate: Boolean(cat.private) });
 
   return {
     key,
     uploadUrl,
-    publicUrl: publicUrlFor(key),
-    expiresIn,
-    headers: { 'Content-Type': contentType },
+    publicUrl: driver.publicUrl(key),
+    expiresIn: config.s3.presignExpires,
+    headers,
   };
 }
 
 /**
- * Issues a short-lived presigned download (`GET`) URL for a private object
+ * Issues a short-lived "presigned" download (`GET`) URL for a private object
  * (e.g. premium replays). The caller-provided key must belong to a known
  * private prefix.
  *
@@ -111,23 +121,13 @@ export async function presignUpload({ userId, category, filename, contentType, s
  * @throws {ApiError} 503 storage disabled · 400 key outside a private prefix.
  */
 export async function presignDownload(key) {
-  const s3 = getS3();
-  if (!s3) throw new ApiError(503, 'STORAGE_UNAVAILABLE', { message: 'Storage is not configured' });
+  const driver = getStorageDriver();
+  if (!driver.isConfigured()) throw new ApiError(503, 'STORAGE_UNAVAILABLE', { message: 'Storage is not configured' });
 
-  const privatePrefixes = Object.values(CATEGORIES).filter((c) => c.private).map((c) => c.prefix);
-  if (!privatePrefixes.some((p) => key.startsWith(`${p}/`))) {
+  if (!isPrivateKey(key)) {
     throw ApiError.badRequest('VALIDATION_ERROR', { details: { key } });
   }
-  const expiresIn = config.s3.presignExpires;
-  const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: config.s3.bucket, Key: key }), { expiresIn });
-  return { url, expiresIn };
-}
-
-/** Reads an S3 object body stream into a Buffer. */
-async function streamToBuffer(stream) {
-  const chunks = [];
-  for await (const chunk of stream) chunks.push(chunk);
-  return Buffer.concat(chunks);
+  return driver.presignGet(key);
 }
 
 /** Finds the upload category whose prefix owns a key. */
@@ -153,21 +153,18 @@ function categoryForKey(key) {
  * @throws {ApiError} 503 storage · 400 bad key · 403 not owner · 415 content mismatch · 422 infected.
  */
 export async function confirmUpload(userId, key) {
-  const s3 = getS3();
-  if (!s3) throw new ApiError(503, 'STORAGE_UNAVAILABLE', { message: 'Storage is not configured' });
+  const driver = getStorageDriver();
+  if (!driver.isConfigured()) throw new ApiError(503, 'STORAGE_UNAVAILABLE', { message: 'Storage is not configured' });
 
   const cat = categoryForKey(key);
   if (!cat) throw ApiError.badRequest('VALIDATION_ERROR', { details: { key } });
   if (!key.startsWith(`${cat.prefix}/${userId}/`)) throw ApiError.forbidden('FORBIDDEN');
 
   const deleteObject = () =>
-    s3.send(new DeleteObjectCommand({ Bucket: config.s3.bucket, Key: key })).catch((err) =>
-      logger.warn({ err: err?.message, key }, 'failed to delete rejected upload'),
-    );
+    driver.delete(key).catch((err) => logger.warn({ err: err?.message, key }, 'failed to delete rejected upload'));
 
   // 1) Magic-byte validation on the leading bytes.
-  const head = await s3.send(new GetObjectCommand({ Bucket: config.s3.bucket, Key: key, Range: 'bytes=0-1023' }));
-  const headBuf = await streamToBuffer(head.Body);
+  const headBuf = await driver.getRange(key, 0, 1023);
   const detected = detectFileType(headBuf);
   if (!detected || !cat.kinds.includes(detected.group)) {
     await deleteObject();
@@ -176,8 +173,7 @@ export async function confirmUpload(userId, key) {
 
   // 2) Optional antivirus scan (bounded-size categories only).
   if (config.clamav.enabled && detected.group !== 'video') {
-    const full = await s3.send(new GetObjectCommand({ Bucket: config.s3.bucket, Key: key }));
-    const buf = await streamToBuffer(full.Body);
+    const buf = await driver.getFull(key);
     const scan = await scanBuffer(buf);
     if (!scan.clean) {
       await deleteObject();
@@ -185,7 +181,7 @@ export async function confirmUpload(userId, key) {
     }
   }
 
-  return { valid: true, key, publicUrl: publicUrlFor(key), contentType: detected.type };
+  return { valid: true, key, publicUrl: driver.publicUrl(key), contentType: detected.type };
 }
 
-export default { presignUpload, presignDownload, confirmUpload };
+export default { presignUpload, presignDownload, confirmUpload, isPrivateKey, PRIVATE_PREFIXES };
