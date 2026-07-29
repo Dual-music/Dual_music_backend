@@ -236,7 +236,19 @@ export async function login(input, ctx = {}) {
   await user.save();
 
   const tokens = await issueTokens(user, ctx);
-  return { user: serializeUser(user), ...tokens };
+  // Renvoie aussi profil + rôles (comme `register`/`me`) : sinon le client applique
+  // des rôles vides à la connexion et affiche un profil « fan » jusqu'à ce qu'un
+  // `/auth/me` arrive (ou un rafraîchissement manuel).
+  const withRoles = await db.User.findByPk(user.id, {
+    include: [{ model: db.UserRole, as: 'roles', attributes: ['role'] }],
+  });
+  const profile = await db.Profile.findByPk(user.id);
+  return {
+    user: serializeUser(user),
+    profile,
+    roles: (withRoles?.roles || []).map((r) => r.role),
+    ...tokens,
+  };
 }
 
 /**
