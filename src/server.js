@@ -29,8 +29,11 @@ async function bootstrap() {
   // Background jobs (BullMQ + Redis, or in-process cron fallback).
   await startJobs();
 
-  server.listen(config.port, () => {
-    logger.info(`Dual Music API listening on http://localhost:${config.port} (${config.env})`);
+  // Bind explicite sur 0.0.0.0 : accepte les connexions IPv4 de tout le LAN
+  // (indispensable pour qu'un téléphone en WiFi atteigne le PC via son IP locale).
+  const host = process.env.HOST || '0.0.0.0';
+  server.listen(config.port, host, () => {
+    logger.info(`Dual Music API listening on http://${host}:${config.port} (${config.env})`);
   });
 
   /** @param {NodeJS.Signals} signal */
