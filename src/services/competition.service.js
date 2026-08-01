@@ -376,8 +376,15 @@ export async function finalizeRanking(competitionId, actor, roles) {
     await competition.save({ transaction: tx });
     return list;
   });
-  // Après clôture : notifie le vainqueur (rang 1).
+  // Diffuse la clôture à toute la room (spectateurs) : déclenche l'animation « vainqueur »
+  // côté clients, avec l'artiste rang 1.
   const winner = candidates[0];
+  emitToRoom('/live', roomName('competition', competitionId), 'status', {
+    competition_id: competitionId,
+    status: 'finished',
+    winner_id: winner?.artist_id ?? null,
+  });
+  // Après clôture : notifie le vainqueur (rang 1).
   if (winner?.artist_id) {
     void notifyUser({
       userId: winner.artist_id,
@@ -430,6 +437,14 @@ export async function sendGift(senderId, { competitionId, candidateId, recipient
     ['success', 'code'],
   );
   if (!out.success) throw out.code === 'insufficient_balance' ? ApiError.badRequest('WALLET_INSUFFICIENT') : ApiError.badRequest('BAD_REQUEST', { details: { code: out.code } });
+  // Diffuse l'animation `gift` à toute la room compétition (parité live/duel/concert : le
+  // burst central s'affiche pour tous les spectateurs). Les gifts live passent par wallet.service,
+  // mais la compétition a sa propre procédure → on émet ici.
+  emitToRoom('/live', roomName('competition', competitionId), 'gift', {
+    to_user_id: candidateId ?? recipientUserId ?? null,
+    from_user_id: senderId,
+    value: credits,
+  });
   return { success: true };
 }
 
