@@ -32,9 +32,9 @@ export async function remove(req, res) {
   return sendSuccess(res, await notificationService.remove(req.user.id, req.params.id));
 }
 
-/** GET /notifications/preferences */
+/** GET /notifications/preferences — flags à plat (web + mobile les lisent à plat). */
 export async function getPreferences(req, res) {
-  return sendSuccess(res, { email: await notificationService.getEmailPreferences(req.user.id) });
+  return sendSuccess(res, await notificationService.getEmailPreferences(req.user.id));
 }
 
 /** PUT /notifications/preferences/email */

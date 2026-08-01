@@ -99,8 +99,8 @@ export async function notifyUser({ userId, type, title, message, data = {}, emai
     }
   }
 
-  // 4) Transactional email (opt-in per call).
-  if (email) {
+  // 4) Transactional email (opt-in per call) — respecte la préférence email de l'utilisateur.
+  if (email && (await emailAllowed(userId, type))) {
     const profile = await db.Profile.findByPk(userId, { attributes: ['email'] });
     if (profile?.email) {
       await sendEmail({ to: profile.email, subject: title, text: message }).catch((err) =>
@@ -108,6 +108,36 @@ export async function notifyUser({ userId, type, title, message, data = {}, emai
       );
     }
   }
+}
+
+/**
+ * Chaque type de notification est rattaché à une catégorie de préférence email. Sémantique
+ * OPT-OUT : on envoie par défaut ; on ne bloque que si l'utilisateur a EXPLICITEMENT désactivé
+ * la catégorie (« email si autorisé par l'utilisateur »).
+ */
+const EMAIL_FLAG_BY_TYPE = {
+  event_reminder: 'email_concerts',
+  badge: 'email_system',
+  admin_report: 'email_system',
+  duel_request: 'email_duels',
+  dedication_received: 'email_concerts',
+  dedication_delivered: 'email_concerts',
+  reward: 'email_system',
+  season_winner_announced: 'email_system',
+  moderation: 'email_system',
+  withdrawal: 'email_system',
+  sponsor: 'email_requests',
+  sponsor_payment_due: 'email_requests',
+  referral: 'email_system',
+  concert_approval: 'email_concerts',
+  artist_request: 'email_requests',
+};
+
+async function emailAllowed(userId, type) {
+  const flag = EMAIL_FLAG_BY_TYPE[type] || 'email_system';
+  const pref = await db.EmailNotificationPreference.findOne({ where: { user_id: userId } }).catch(() => null);
+  // Pas de préférence enregistrée → autorisé (opt-out). Sinon on respecte la bascule.
+  return pref ? pref[flag] !== false : true;
 }
 
 export default { notifyUser };
