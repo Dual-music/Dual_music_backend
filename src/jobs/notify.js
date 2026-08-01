@@ -58,9 +58,14 @@ export async function notifyUser({ userId, type, title, message, data = {}, emai
     created_at: row.created_at,
   });
 
-  // 3) Push (best-effort). Les jetons FCM (mobile) sont stockés dans push_subscriptions
-  //    avec p256dh='fcm' ; les abonnements Web Push ont de vraies clés VAPID.
-  if (push) {
+  // Préférences (une seule lecture) — gate push + email selon les choix de l'utilisateur.
+  const prefs = (push || email)
+    ? await db.EmailNotificationPreference.findOne({ where: { user_id: userId } }).catch(() => null)
+    : null;
+
+  // 3) Push (best-effort) — respecte la préférence push (opt-out). Les jetons FCM (mobile)
+  //    sont stockés dans push_subscriptions avec p256dh='fcm' ; Web Push a de vraies clés VAPID.
+  if (push && prefs?.push_enabled !== false) {
     const subs = await db.PushSubscription.findAll({ where: { user_id: userId } });
     const webSubs = subs.filter((s) => s.p256dh !== 'fcm');
     const fcmTokens = subs.filter((s) => s.p256dh === 'fcm').map((s) => s.endpoint);
@@ -100,7 +105,7 @@ export async function notifyUser({ userId, type, title, message, data = {}, emai
   }
 
   // 4) Transactional email (opt-in per call) — respecte la préférence email de l'utilisateur.
-  if (email && (await emailAllowed(userId, type))) {
+  if (email && emailAllowed(prefs, type)) {
     const profile = await db.Profile.findByPk(userId, { attributes: ['email'] });
     if (profile?.email) {
       await sendEmail({ to: profile.email, subject: title, text: message }).catch((err) =>
@@ -138,9 +143,8 @@ const EMAIL_FLAG_BY_TYPE = {
   live_started: 'email_lives',
 };
 
-async function emailAllowed(userId, type) {
+function emailAllowed(pref, type) {
   const flag = EMAIL_FLAG_BY_TYPE[type] || 'email_system';
-  const pref = await db.EmailNotificationPreference.findOne({ where: { user_id: userId } }).catch(() => null);
   // Pas de préférence enregistrée → autorisé (opt-out). Sinon on respecte la bascule.
   return pref ? pref[flag] !== false : true;
 }

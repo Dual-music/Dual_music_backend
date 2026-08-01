@@ -29,6 +29,7 @@ export const updateEmailPrefs = {
     email_requests: Joi.boolean(),
     email_system: Joi.boolean(),
     email_votes: Joi.boolean(),
+    push_enabled: Joi.boolean(),
   }).min(1),
 };
 

@@ -11,7 +11,7 @@ import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
  * @module services/notification.service
  */
 
-/** Email preference columns (all boolean, default true). */
+/** Colonnes de préférences modifiables (email par catégorie + push global). */
 const EMAIL_PREF_KEYS = [
   'email_assignments',
   'email_concerts',
@@ -21,6 +21,8 @@ const EMAIL_PREF_KEYS = [
   'email_requests',
   'email_system',
   'email_votes',
+  // Préférence push (opt-out global).
+  'push_enabled',
 ];
 
 /**

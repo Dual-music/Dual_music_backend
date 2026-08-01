@@ -22,6 +22,8 @@ export default function defineEmailNotificationPreference(sequelize) {
     email_requests: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     email_system: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     email_votes: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    // Préférence push (opt-out) — défaut activé ; respectée par notifyUser.
+    push_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4, allowNull: false },
     updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
     user_id: { type: DataTypes.UUID, allowNull: false },
