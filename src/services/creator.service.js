@@ -1,6 +1,42 @@
 import { db } from '../models/index.js';
+import { notifyUser } from '../jobs/notify.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
+
+/**
+ * Notifie la SOUMISSION d'une demande de rôle : confirmation au demandeur (notif + push + email)
+ * et alerte aux admins (notif + push). « Toutes les étapes » de la demande sont ainsi couvertes.
+ */
+async function notifyRoleRequestSubmitted(userId, kind, requestId) {
+  const type = kind === 'artist' ? 'artist_request' : 'manager_request';
+  const label = kind === 'artist' ? 'artiste' : 'manager';
+  await notifyUser({
+    userId,
+    type,
+    title: 'Demande envoyée',
+    message: `Votre demande pour devenir ${label} a été envoyée et est en attente de validation.`,
+    data: { request_id: requestId, status: 'submitted' },
+    email: true,
+    push: true,
+  }).catch(() => {});
+  // Alerte aux admins (in-app + push).
+  const [admins, applicant] = await Promise.all([
+    db.UserRole.findAll({ where: { role: 'admin' }, attributes: ['user_id'], raw: true }).catch(() => []),
+    db.Profile.findByPk(userId, { attributes: ['full_name'], raw: true }).catch(() => null),
+  ]);
+  await Promise.allSettled(
+    admins.map((a) =>
+      notifyUser({
+        userId: a.user_id,
+        type,
+        title: `Nouvelle demande ${label}`,
+        message: `${applicant?.full_name || 'Un utilisateur'} a soumis une demande pour devenir ${label}.`,
+        data: { request_id: requestId, kind },
+        push: true,
+      }),
+    ),
+  );
+}
 
 /**
  * @file Creator (artist & manager) applications and profiles service.
@@ -37,13 +73,15 @@ async function grantRole(userId, role, tx) {
 export async function applyAsArtist(userId, input) {
   const pending = await db.ArtistRequest.findOne({ where: { user_id: userId, status: 'pending' } });
   if (pending) throw ApiError.conflict('CONFLICT', { details: { reason: 'pending_request_exists' } });
-  return db.ArtistRequest.create({
+  const request = await db.ArtistRequest.create({
     user_id: userId,
     description: input.description,
     social_links: input.socialLinks ?? {},
     justification_document_url: input.justificationDocumentUrl ?? null,
     status: 'pending',
   });
+  void notifyRoleRequestSubmitted(userId, 'artist', request.id).catch(() => {});
+  return request;
 }
 
 /**
@@ -55,12 +93,14 @@ export async function applyAsArtist(userId, input) {
 export async function applyAsManager(userId, input) {
   const pending = await db.ManagerRequest.findOne({ where: { user_id: userId, status: 'pending' } });
   if (pending) throw ApiError.conflict('CONFLICT', { details: { reason: 'pending_request_exists' } });
-  return db.ManagerRequest.create({
+  const request = await db.ManagerRequest.create({
     user_id: userId,
     bio: input.bio,
     experience: input.experience,
     status: 'pending',
   });
+  void notifyRoleRequestSubmitted(userId, 'manager', request.id).catch(() => {});
+  return request;
 }
 
 /**
@@ -149,33 +189,46 @@ export async function reviewArtistRequest(requestId, reviewerId, decision) {
  * @returns {Promise<object>}
  */
 export async function reviewManagerRequest(requestId, reviewerId, decision) {
-  return db.sequelize.transaction(async (tx) => {
-    const req = await db.ManagerRequest.findByPk(requestId, { transaction: tx });
-    if (!req) throw ApiError.notFound('NOT_FOUND');
-    if (req.status !== 'pending') throw ApiError.conflict('CONFLICT', { details: { status: req.status } });
+  const req = await db.sequelize.transaction(async (tx) => {
+    const r = await db.ManagerRequest.findByPk(requestId, { transaction: tx });
+    if (!r) throw ApiError.notFound('NOT_FOUND');
+    if (r.status !== 'pending') throw ApiError.conflict('CONFLICT', { details: { status: r.status } });
 
-    req.status = decision.approve ? 'approved' : 'rejected';
-    req.reviewed_by = reviewerId;
-    req.reviewed_at = new Date();
-    await req.save({ transaction: tx });
+    r.status = decision.approve ? 'approved' : 'rejected';
+    r.reviewed_by = reviewerId;
+    r.reviewed_at = new Date();
+    await r.save({ transaction: tx });
 
     if (decision.approve) {
-      await grantRole(req.user_id, 'manager', tx);
-      const profile = await db.Profile.findByPk(req.user_id, { transaction: tx });
+      await grantRole(r.user_id, 'manager', tx);
+      const profile = await db.Profile.findByPk(r.user_id, { transaction: tx });
       await db.ManagerProfile.findOrCreate({
-        where: { user_id: req.user_id },
+        where: { user_id: r.user_id },
         defaults: {
-          user_id: req.user_id,
+          user_id: r.user_id,
           display_name: profile?.full_name ?? null,
-          bio: req.bio,
-          experience: req.experience,
+          bio: r.bio,
+          experience: r.experience,
           is_public: true,
         },
         transaction: tx,
       });
     }
-    return req;
+    return r;
   });
+  // Après commit : notifie le demandeur (approbation ou refus) — suivi de la demande.
+  void notifyUser({
+    userId: req.user_id,
+    type: 'manager_request',
+    title: decision.approve ? 'Demande approuvée' : 'Demande refusée',
+    message: decision.approve
+      ? 'Votre demande pour devenir manager a été approuvée !'
+      : 'Votre demande pour devenir manager a été refusée.',
+    data: { request_id: req.id },
+    email: true,
+    push: true,
+  }).catch(() => {});
+  return req;
 }
 
 /** Fields an artist may update on their artist profile. */

@@ -136,6 +136,7 @@ const EMAIL_FLAG_BY_TYPE = {
   referral: 'email_system',
   concert_approval: 'email_concerts',
   artist_request: 'email_requests',
+  manager_request: 'email_requests',
   gift_received: 'email_gifts',
   follower: 'email_system',
   duel_result: 'email_duels',
