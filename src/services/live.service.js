@@ -1,6 +1,7 @@
 import { QueryTypes } from 'sequelize';
 
 import { db } from '../models/index.js';
+import { notifyUser } from '../jobs/notify.js';
 import { emitToRoom, roomName } from '../realtime/bus.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
@@ -93,7 +94,7 @@ export async function getLiveTitlesByIds(ids) {
  * @returns {Promise<object>}
  */
 export async function startLive(artistId, input) {
-  return db.ArtistLive.create({
+  const live = await db.ArtistLive.create({
     artist_id: artistId,
     title: input.title ?? null,
     room_id: input.roomId ?? null,
@@ -101,6 +102,30 @@ export async function startLive(artistId, input) {
     status: 'live',
     started_at: new Date(),
   });
+  // Fan-out best-effort : prévient les abonnés de l'artiste qu'un live démarre.
+  void notifyFollowersLiveStarted(artistId, live).catch(() => {});
+  return live;
+}
+
+/** Notifie tous les abonnés de l'artiste (in-app + temps réel + push ; email selon prefs). */
+async function notifyFollowersLiveStarted(artistId, live) {
+  const [artist, followers] = await Promise.all([
+    db.Profile.findByPk(artistId, { attributes: ['full_name'], raw: true }).catch(() => null),
+    db.ArtistFollower.findAll({ where: { artist_id: artistId }, attributes: ['follower_id'], raw: true }).catch(() => []),
+  ]);
+  const name = artist?.full_name || 'Un artiste que vous suivez';
+  await Promise.allSettled(
+    followers.map((f) =>
+      notifyUser({
+        userId: f.follower_id,
+        type: 'live_started',
+        title: '🔴 Live en cours',
+        message: `${name} vient de démarrer un live !`,
+        data: { live_id: live.id, artist_id: artistId },
+        push: true,
+      }),
+    ),
+  );
 }
 
 /**
