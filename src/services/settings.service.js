@@ -33,6 +33,8 @@ export const PUBLIC_SETTING_KEYS = Object.freeze([
   // Public-facing feature toggles read by signup/validation/report UIs.
   'artist_requests_enabled',
   'manager_requests_enabled',
+  // Whether managers may create duels themselves (default off: admin assigns duels).
+  'manager_duel_creation',
   'live_report_config',
   'account_report_config',
 ]);
