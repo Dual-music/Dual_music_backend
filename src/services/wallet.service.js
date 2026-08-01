@@ -1,6 +1,7 @@
 import { QueryTypes } from 'sequelize';
 
 import { db } from '../models/index.js';
+import { notifyUser } from '../jobs/notify.js';
 import { emitToRoom, emitToUser, roomName } from '../realtime/bus.js';
 import { ApiError } from '../utils/ApiError.js';
 import { creditsToEur } from '../utils/money.js';
@@ -112,6 +113,16 @@ export async function sendGift(userId, { giftId, toUserId, duelId = null, liveId
   // Live gift feed on the event stage.
   const ctx = duelId ? ['duel', duelId] : liveId ? ['live', liveId] : concertId ? ['concert', concertId] : null;
   if (ctx) emitToRoom('/live', roomName(ctx[0], ctx[1]), 'gift', { to_user_id: toUserId, from_user_id: userId, value });
+  // Notification durable au destinataire (in-app + temps réel + push ; email opt-in).
+  void notifyUser({
+    userId: toUserId,
+    type: 'gift_received',
+    title: 'Cadeau reçu 🎁',
+    message: `Vous avez reçu un cadeau (${value} crédits).`,
+    data: { from_user_id: userId, value },
+    email: true,
+    push: true,
+  }).catch(() => {});
   return { success: true, transactionId: out.entity_id };
 }
 

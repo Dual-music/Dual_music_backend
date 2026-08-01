@@ -450,14 +450,17 @@ export async function reviewArtistConcert(id, adminId, decision) {
   if (!decision.approve) concert.rejection_reason = decision.rejectionReason ?? null;
   await concert.save();
 
-  await db.Notification.create({
-    user_id: concert.artist_id,
+  // Notifie l'artiste (in-app + temps réel + push + email) via le pipeline unique.
+  await notifyUser({
+    userId: concert.artist_id,
     type: 'concert_approval',
     title: decision.approve ? 'Concert approuvé' : 'Concert refusé',
     message: decision.approve
       ? `Votre concert "${concert.title}" a été approuvé.`
       : `Votre concert "${concert.title}" a été refusé.`,
     data: { concert_id: concert.id },
+    email: true,
+    push: true,
   });
   return concert;
 }

@@ -1,4 +1,5 @@
 import { db } from '../models/index.js';
+import { notifyUser } from '../jobs/notify.js';
 import { emitToRoom, roomName } from '../realtime/bus.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
@@ -352,29 +353,43 @@ export async function setForcedFocus(competitionId, actor, roles, participantId)
  * @returns {Promise<object[]>} Ranked candidates.
  */
 export async function finalizeRanking(competitionId, actor, roles) {
-  return db.sequelize.transaction(async (tx) => {
+  const candidates = await db.sequelize.transaction(async (tx) => {
     const competition = await db.Competition.findByPk(competitionId, { transaction: tx });
     if (!competition) throw ApiError.notFound('NOT_FOUND');
     assertManager(competition, actor, roles);
 
-    const candidates = await db.CompetitionCandidate.findAll({
+    const list = await db.CompetitionCandidate.findAll({
       where: { competition_id: competitionId, status: 'approved' },
       transaction: tx,
     });
-    candidates.sort(
+    list.sort(
       (a, b) =>
         Number(b.total_votes || 0) + Number(b.total_gifts_credits || 0) -
         (Number(a.total_votes || 0) + Number(a.total_gifts_credits || 0)),
     );
-    for (let i = 0; i < candidates.length; i += 1) {
-      candidates[i].final_rank = i + 1;
-      await candidates[i].save({ transaction: tx });
+    for (let i = 0; i < list.length; i += 1) {
+      list[i].final_rank = i + 1;
+      await list[i].save({ transaction: tx });
     }
     competition.status = 'finished';
     competition.winner_announced_at = new Date();
     await competition.save({ transaction: tx });
-    return candidates;
+    return list;
   });
+  // Après clôture : notifie le vainqueur (rang 1).
+  const winner = candidates[0];
+  if (winner?.artist_id) {
+    void notifyUser({
+      userId: winner.artist_id,
+      type: 'competition_result',
+      title: 'Vous avez remporté la compétition 🏆',
+      message: 'Félicitations, vous êtes 1er du classement final !',
+      data: { competition_id: competitionId },
+      email: true,
+      push: true,
+    }).catch(() => {});
+  }
+  return candidates;
 }
 
 /**

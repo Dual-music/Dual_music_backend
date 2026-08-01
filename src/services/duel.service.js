@@ -1,6 +1,7 @@
 import { QueryTypes } from 'sequelize';
 
 import { db } from '../models/index.js';
+import { notifyUser } from '../jobs/notify.js';
 import { emitToRoom, roomName } from '../realtime/bus.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
@@ -172,6 +173,17 @@ export async function updateDuel(id, actor, roles, patch) {
       ends_at: duel.current_timer_ends_at,
       target_id: duel.current_timer_target_id,
     });
+  }
+  // Notifie le vainqueur quand un gagnant est annoncé.
+  if (patch.winnerId) {
+    void notifyUser({
+      userId: duel.winner_id,
+      type: 'duel_result',
+      title: 'Vous avez gagné le duel 🏆',
+      message: 'Félicitations, vous êtes le vainqueur du duel !',
+      data: { duel_id: id },
+      push: true,
+    }).catch(() => {});
   }
   return duel;
 }

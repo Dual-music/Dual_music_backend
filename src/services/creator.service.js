@@ -99,43 +99,46 @@ export async function listMyRequests(kind, userId) {
  * @returns {Promise<object>} The updated request.
  */
 export async function reviewArtistRequest(requestId, reviewerId, decision) {
-  return db.sequelize.transaction(async (tx) => {
-    const req = await db.ArtistRequest.findByPk(requestId, { transaction: tx });
-    if (!req) throw ApiError.notFound('NOT_FOUND');
-    if (req.status !== 'pending') throw ApiError.conflict('CONFLICT', { details: { status: req.status } });
+  const req = await db.sequelize.transaction(async (tx) => {
+    const r = await db.ArtistRequest.findByPk(requestId, { transaction: tx });
+    if (!r) throw ApiError.notFound('NOT_FOUND');
+    if (r.status !== 'pending') throw ApiError.conflict('CONFLICT', { details: { status: r.status } });
 
-    req.status = decision.approve ? 'approved' : 'rejected';
-    req.reviewed_by = reviewerId;
-    req.reviewed_at = new Date();
-    await req.save({ transaction: tx });
+    r.status = decision.approve ? 'approved' : 'rejected';
+    r.reviewed_by = reviewerId;
+    r.reviewed_at = new Date();
+    await r.save({ transaction: tx });
 
     if (decision.approve) {
-      await grantRole(req.user_id, 'artist', tx);
-      const profile = await db.Profile.findByPk(req.user_id, { transaction: tx });
+      await grantRole(r.user_id, 'artist', tx);
+      const profile = await db.Profile.findByPk(r.user_id, { transaction: tx });
       await db.ArtistProfile.findOrCreate({
-        where: { user_id: req.user_id },
+        where: { user_id: r.user_id },
         defaults: {
-          user_id: req.user_id,
+          user_id: r.user_id,
           stage_name: profile?.full_name ?? null,
           avatar_url: profile?.avatar_url ?? null,
-          social_links: req.social_links ?? {},
+          social_links: r.social_links ?? {},
           is_public: true,
         },
         transaction: tx,
       });
-      await db.Notification.create(
-        {
-          user_id: req.user_id,
-          type: 'artist_request',
-          title: 'Demande approuvée',
-          message: 'Votre demande pour devenir artiste a été approuvée !',
-          data: { request_id: req.id },
-        },
-        { transaction: tx },
-      );
     }
-    return req;
+    return r;
   });
+  // Après commit : notification (in-app + temps réel + push + email) — suivi de la demande.
+  void notifyUser({
+    userId: req.user_id,
+    type: 'artist_request',
+    title: decision.approve ? 'Demande approuvée' : 'Demande refusée',
+    message: decision.approve
+      ? 'Votre demande pour devenir artiste a été approuvée !'
+      : 'Votre demande pour devenir artiste a été refusée.',
+    data: { request_id: req.id },
+    email: true,
+    push: true,
+  }).catch(() => {});
+  return req;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { Op, QueryTypes } from 'sequelize';
 
 import { db } from '../models/index.js';
+import { notifyUser } from '../jobs/notify.js';
 import { ApiError } from '../utils/ApiError.js';
 
 /**
@@ -220,10 +221,22 @@ export async function followArtist(followerId, artistId) {
   if (followerId === artistId) throw ApiError.badRequest('BAD_REQUEST');
   const target = await db.Profile.findByPk(artistId);
   if (!target) throw ApiError.notFound('NOT_FOUND');
-  await db.ArtistFollower.findOrCreate({
+  const [, created] = await db.ArtistFollower.findOrCreate({
     where: { artist_id: artistId, follower_id: followerId },
     defaults: { artist_id: artistId, follower_id: followerId },
   });
+  // Notifie l'artiste d'un nouvel abonné (une seule fois, à la création du suivi).
+  if (created) {
+    const follower = await db.Profile.findByPk(followerId, { attributes: ['full_name'], raw: true }).catch(() => null);
+    void notifyUser({
+      userId: artistId,
+      type: 'follower',
+      title: 'Nouvel abonné 💜',
+      message: `${follower?.full_name || 'Un utilisateur'} vous suit désormais.`,
+      data: { follower_id: followerId },
+      push: true,
+    }).catch(() => {});
+  }
   return { following: true };
 }
 
