@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { logger } from '../config/logger.js';
+import { notifyUser } from '../jobs/notify.js';
 import { db } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { hashPassword, verifyPassword } from '../utils/password.js';
@@ -119,6 +120,9 @@ async function provisionUserRecords(tx, user, { fullName, countryCode, phoneCoun
   const welcomeCredits = await getWelcomeCredits(tx);
   await db.UserWallet.create({ user_id: user.id, balance: welcomeCredits }, { transaction: tx });
 
+  // La notification du parrain est envoyée APRÈS le commit (temps réel + push + email),
+  // via notifyUser — on remonte juste l'info ici.
+  let referralNotify = null;
   if (referrerId) {
     const referrer = await db.Profile.findByPk(referrerId, { transaction: tx });
     if (referrer) {
@@ -133,21 +137,12 @@ async function provisionUserRecords(tx, user, { fullName, countryCode, phoneCoun
           },
           { transaction: tx },
         );
-        await db.Notification.create(
-          {
-            user_id: referrerId,
-            type: 'referral',
-            title: 'Nouveau filleul !',
-            message: `${fullName || 'Un nouvel utilisateur'} s'est inscrit via votre lien de parrainage`,
-            data: { referred_id: user.id },
-          },
-          { transaction: tx },
-        );
+        referralNotify = { referrerId, fullName, referredId: user.id };
       }
     }
   }
 
-  return { roles };
+  return { roles, referralNotify };
 }
 
 /**
@@ -172,6 +167,7 @@ export async function register(input, ctx = {}) {
   const passwordHash = await hashPassword(input.password);
 
   let grantedRoles = ['fan'];
+  let referralNotify = null;
   const user = await db.sequelize.transaction(async (tx) => {
     let referrerId = null;
     if (input.referralCode) {
@@ -199,8 +195,21 @@ export async function register(input, ctx = {}) {
       referrerId,
     });
     grantedRoles = provisioned.roles;
+    referralNotify = provisioned.referralNotify;
     return created;
   });
+
+  // Parrainage : notifie le parrain après le commit (in-app + temps réel + push + email).
+  if (referralNotify) {
+    void notifyUser({
+      userId: referralNotify.referrerId,
+      type: 'referral',
+      title: 'Nouveau filleul !',
+      message: `${referralNotify.fullName || 'Un nouvel utilisateur'} s'est inscrit via votre lien de parrainage`,
+      data: { referred_id: referralNotify.referredId },
+      push: true,
+    }).catch((err) => logger.warn({ err: err.message }, 'referral notify failed'));
+  }
 
   // Post-commit, best-effort side effects (never block/rollback registration).
   if (user.phone) {
