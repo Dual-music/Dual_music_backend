@@ -35,6 +35,8 @@ export const PUBLIC_SETTING_KEYS = Object.freeze([
   'manager_requests_enabled',
   // Whether managers may create duels themselves (default off: admin assigns duels).
   'manager_duel_creation',
+  // Enregistrement des directs par type : { live|duel|concert|competition: 'off'|'auto'|'manual' }.
+  'recording_config',
   'live_report_config',
   'account_report_config',
 ]);

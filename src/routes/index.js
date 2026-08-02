@@ -20,6 +20,7 @@ import { livekitRouter } from './livekit.routes.js';
 import { moderationRouter } from './moderation.routes.js';
 import { notificationRouter } from './notification.routes.js';
 import { paymentsRouter } from './payments.routes.js';
+import { recordingRouter } from './recording.routes.js';
 import { referralRouter } from './referral.routes.js';
 import { replayRouter } from './replay.routes.js';
 import { settingsRouter } from './settings.routes.js';
@@ -81,6 +82,7 @@ apiRouter.use('/notifications', notificationRouter);
 apiRouter.use('/leaderboards', leaderboardRouter);
 apiRouter.use('/sponsors', sponsorRouter);
 apiRouter.use('/replays', replayRouter);
+apiRouter.use('/recordings', recordingRouter);
 // Token-authorized local transport — MUST precede the authenticated `/uploads`
 // router so unauthenticated PUT/GET-by-token requests aren't rejected by its auth.
 apiRouter.use('/uploads/local', localStorageRouter);

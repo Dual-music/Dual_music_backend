@@ -33,9 +33,28 @@ et échoue les `pending` bloqués. No-op si egress off.
 Tout est **gated** : si `LIVEKIT_EGRESS_ENABLED=false` ou storage/LiveKit non configuré,
 chaque point est un **no-op** — un échec d'enregistrement ne casse jamais un passage en live.
 
-> **Compétitions** : volontairement hors auto-egress pour l'instant (cycle par slots/votes,
-> potentiellement multi-jours → un egress continu n'aurait pas de sens). À cadrer séparément
-> (egress par slot de performeur) si besoin.
+> **Compétitions — egress par slot de performeur** : pas d'egress continu (cycle par
+> votes, potentiellement long). À la place, chaque **performance** est enregistrée
+> individuellement : `setPerformer(candidat)` clôt le slot précédent et démarre un nouvel
+> enregistrement (→ un replay par performeur) ; `setPerformer(null)` ou la finalisation
+> arrête le slot courant. Statut interne `stopping` pour enchaîner les slots sans course.
+
+## Configuration admin (qui enregistre, et comment)
+
+Réglage `recording_config` (via `PUT /admin/settings/recording_config`), par type d'événement :
+
+```json
+{ "live": "off", "duel": "auto", "concert": "manual", "competition": "auto" }
+```
+
+- **`off`** : aucun enregistrement possible pour ce type.
+- **`auto`** : enregistrement **automatique** au passage en live.
+- **`manual`** : l'**hôte/manager lance** l'enregistrement quand il le veut, via
+  `POST /recordings/start` / `POST /recordings/stop` (état via `GET /recordings/status`).
+
+Défaut (clé absente) : **`off`** partout — rien n'est enregistré tant que l'admin n'a pas
+choisi. Ainsi tous les directs ne sont pas enregistrés par défaut. La clé est **lisible
+publiquement** (whitelist) pour piloter l'affichage du bouton d'enregistrement côté clients.
 
 ## Prérequis d'infra (à provisionner)
 

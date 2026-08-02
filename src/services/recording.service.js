@@ -13,6 +13,7 @@ import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { db } from '../models/index.js';
 import { roomName } from '../realtime/bus.js';
+import { ApiError } from '../utils/ApiError.js';
 import { createReplay } from './replay.service.js';
 
 /**
@@ -96,13 +97,42 @@ function thumbnailFromEgress(egressInfo) {
 }
 
 /**
- * Démarre l'enregistrement d'un direct (idempotent par source). No-op si egress off.
- * @param {{ sourceType: 'duel'|'concert'|'competition'|'live', sourceId: string, artistId?: string, createdBy?: string }} p
+ * Mode d'enregistrement par type d'événement, choisi par l'admin :
+ *  - `off`    : aucun enregistrement possible.
+ *  - `auto`   : enregistrement automatique au passage en live.
+ *  - `manual` : l'hôte/manager lance l'enregistrement quand il le veut.
+ * Réglage `recording_config` = `{ live, duel, concert, competition }`. Défaut : `off`.
+ * @param {string} sourceType
+ * @returns {Promise<'off'|'auto'|'manual'>}
+ */
+export async function getRecordingMode(sourceType) {
+  try {
+    const row = await db.PlatformSetting.findByPk('recording_config', { raw: true });
+    const mode = row?.value?.[sourceType];
+    return mode === 'auto' || mode === 'manual' ? mode : 'off';
+  } catch {
+    return 'off';
+  }
+}
+
+/**
+ * Démarre l'enregistrement d'un direct (idempotent par source). No-op si egress off,
+ * si le mode admin l'interdit, ou si le déclencheur n'est pas autorisé par ce mode.
+ * @param {object} p
+ * @param {'duel'|'concert'|'competition'|'live'} p.sourceType
+ * @param {string} p.sourceId
+ * @param {string} [p.artistId]
+ * @param {string} [p.createdBy]
+ * @param {Array<'auto'|'manual'>} [p.allowedModes=['auto']] - Modes sous lesquels ce
+ *   déclencheur a le droit de lancer (go-live: `['auto']` ; bouton hôte: `['auto','manual']`).
  * @returns {Promise<void>}
  */
-export async function startRecording({ sourceType, sourceId, artistId, createdBy }) {
+export async function startRecording({ sourceType, sourceId, artistId, createdBy, allowedModes = ['auto'] }) {
   if (!RECORDABLE.has(sourceType) || !sourceId) return;
   if (!egressReady()) return;
+  // Gate admin : le mode configuré doit autoriser ce déclencheur.
+  const mode = await getRecordingMode(sourceType);
+  if (!allowedModes.includes(mode)) return;
   try {
     // Idempotence : ne pas relancer si un enregistrement est déjà en cours pour cette source.
     const existing = await db.StreamRecording.findOne({
@@ -171,10 +201,14 @@ export async function stopRecording({ sourceType, sourceId }) {
   if (!egressReady()) return;
   try {
     const rec = await db.StreamRecording.findOne({
-      where: { source_type: sourceType, source_id: sourceId, status: 'active' },
+      where: { source_type: sourceType, source_id: sourceId, status: ['pending', 'active'] },
       order: [['created_at', 'DESC']],
     });
     if (!rec?.egress_id) return;
+    // Marque « stopping » immédiatement : libère l'idempotence pour un nouveau slot (compétition)
+    // pendant que le webhook egress_ended finalise l'enregistrement précédent.
+    rec.status = 'stopping';
+    await rec.save().catch(() => {});
     await getEgressClient().stopEgress(rec.egress_id);
     logger.info({ egressId: rec.egress_id, sourceType, sourceId }, 'egress stop requested');
     // Le statut final (completed) + le replay sont posés par le webhook egress_ended.
@@ -283,9 +317,9 @@ export async function reconcileRecordings() {
     await r.save().catch(() => {});
   }
 
-  // 2) `active` : on interroge l'egress réel (webhook potentiellement perdu).
+  // 2) `active`/`stopping` : on interroge l'egress réel (webhook potentiellement perdu).
   const active = await db.StreamRecording.findAll({
-    where: { status: 'active', egress_id: { [Op.ne]: null } },
+    where: { status: ['active', 'stopping'], egress_id: { [Op.ne]: null } },
     limit: 100,
   });
   let finalized = 0;
@@ -322,4 +356,50 @@ export async function reconcileRecordings() {
   return { pendingFailed: stalePending.length, finalized, failed };
 }
 
-export default { startRecording, stopRecording, finalizeFromEgress, reconcileRecordings };
+/**
+ * Vérifie que le caller a le droit de piloter l'enregistrement d'un événement : propriétaire
+ * (hôte/artiste/manager) ou staff. Sinon lève 403.
+ * @param {string} sourceType @param {string} sourceId @param {string} userId @param {string[]} roles
+ * @returns {Promise<void>}
+ */
+export async function assertEventOwner(sourceType, sourceId, userId, roles = []) {
+  if (roles.includes('admin') || roles.includes('moderator')) return;
+  let owner = false;
+  if (sourceType === 'live') {
+    const l = await db.ArtistLive.findByPk(sourceId, { attributes: ['artist_id'], raw: true });
+    owner = l?.artist_id === userId;
+  } else if (sourceType === 'concert') {
+    const c = await db.ArtistConcert.findByPk(sourceId, { attributes: ['artist_id'], raw: true });
+    owner = c?.artist_id === userId;
+  } else if (sourceType === 'duel') {
+    const d = await db.Duel.findByPk(sourceId, { attributes: ['artist1_id', 'artist2_id', 'manager_id'], raw: true });
+    owner = !!d && [d.artist1_id, d.artist2_id, d.manager_id].includes(userId);
+  } else if (sourceType === 'competition') {
+    const c = await db.Competition.findByPk(sourceId, { attributes: ['manager_id'], raw: true });
+    owner = c?.manager_id === userId;
+  }
+  if (!owner) throw ApiError.forbidden('FORBIDDEN');
+}
+
+/**
+ * État d'enregistrement d'un événement (pour piloter le bouton hôte).
+ * @param {string} sourceType @param {string} sourceId
+ * @returns {Promise<{ mode: 'off'|'auto'|'manual', active: boolean }>}
+ */
+export async function recordingStatus(sourceType, sourceId) {
+  const mode = await getRecordingMode(sourceType);
+  const active = await db.StreamRecording.findOne({
+    where: { source_type: sourceType, source_id: sourceId, status: ['pending', 'active', 'stopping'] },
+  });
+  return { mode, active: !!active };
+}
+
+export default {
+  startRecording,
+  stopRecording,
+  finalizeFromEgress,
+  reconcileRecordings,
+  getRecordingMode,
+  assertEventOwner,
+  recordingStatus,
+};

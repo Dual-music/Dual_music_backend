@@ -5,6 +5,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
 import { callProcedure } from '../utils/procedures.js';
 
+import { startRecording, stopRecording } from './recording.service.js';
 import { getDisplayProfiles } from './user.service.js';
 
 /**
@@ -321,6 +322,24 @@ export async function setPerformer(competitionId, actor, roles, candidateId, dur
     performerId: candidateId,
     durationSec: competition.current_performer_duration_sec,
   });
+  // Egress PAR SLOT : chaque performance devient un replay. On clôt le slot précédent puis on
+  // démarre le nouveau (séquencé pour éviter la course d'idempotence). No-op si egress off /
+  // mode 'off'. Un slot vide (candidateId=null) ne fait qu'arrêter.
+  const performerArtistId = candidateId
+    ? (await db.CompetitionCandidate.findByPk(candidateId, { attributes: ['artist_id'], raw: true }).catch(() => null))?.artist_id
+    : null;
+  void (async () => {
+    await stopRecording({ sourceType: 'competition', sourceId: competitionId }).catch(() => {});
+    if (candidateId) {
+      await startRecording({
+        sourceType: 'competition',
+        sourceId: competitionId,
+        artistId: performerArtistId,
+        createdBy: actor.id,
+        allowedModes: ['auto', 'manual'],
+      }).catch(() => {});
+    }
+  })();
   return competition;
 }
 
@@ -384,6 +403,8 @@ export async function finalizeRanking(competitionId, actor, roles) {
     status: 'finished',
     winner_id: winner?.artist_id ?? null,
   });
+  // Clôt un éventuel slot d'enregistrement encore actif.
+  void stopRecording({ sourceType: 'competition', sourceId: competitionId }).catch(() => {});
   // Après clôture : notifie le vainqueur (rang 1).
   if (winner?.artist_id) {
     void notifyUser({
