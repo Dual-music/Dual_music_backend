@@ -20,7 +20,15 @@ composite (tous les intervenants), robuste aux déconnexions, uniforme web/mobil
 2. **Fin du direct** → `stopRecording()` arrête l'egress.
 3. **Webhook** `POST /webhooks/livekit` (event `egress_ended`, statut COMPLETE) →
    `finalizeFromEgress()` crée le `replay_videos` (URL publique déduite de la clé, durée,
-   miniature = couverture de l'événement si dispo) et clôt la ligge `stream_recordings`.
+   miniature) et clôt la ligne `stream_recordings`.
+
+**Miniatures** : un `ImageOutput` (frame extraite de la vidéo toutes les 30 s, écrasée sur une
+clé unique) fournit une vraie vignette. Repli sur la couverture de l'événement si LiveKit
+n'a pas produit d'image.
+
+**Fiabilité** : un job `reconcile-recordings` (toutes les 5 min) rattrape les webhooks perdus
+(crash hôte, redémarrage) en interrogeant l'egress réel (`listEgress`) pour finaliser/clôturer,
+et échoue les `pending` bloqués. No-op si egress off.
 
 Tout est **gated** : si `LIVEKIT_EGRESS_ENABLED=false` ou storage/LiveKit non configuré,
 chaque point est un **no-op** — un échec d'enregistrement ne casse jamais un passage en live.
@@ -53,6 +61,5 @@ chaque point est un **no-op** — un échec d'enregistrement ne casse jamais un 
 
 ## Améliorations possibles (phase 2)
 
-- **Miniatures dédiées** via `ImageOutput` (captures périodiques) plutôt que la couverture.
-- **Egress compétition** par slot de performeur.
-- Nettoyage des enregistrements `pending` orphelins (job de réconciliation).
+- **Egress compétition** par slot de performeur (aujourd'hui hors scope).
+- **Feed replays** vertical façon TikTok + accès depuis les cartes d'événements terminés.

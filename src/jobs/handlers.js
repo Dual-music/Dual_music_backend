@@ -4,9 +4,10 @@ import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { db } from '../models/index.js';
 import { emitToRoom, roomName } from '../realtime/bus.js';
-import { computeCreditsForRecharge } from '../services/payments/pricing.service.js';
-import { purgeExpiredAccounts } from '../services/user.service.js';
+import { checkCinetpayBalances, reconcileCinetpayPayouts } from '../services/payments/payout.service.js';
 import { checkPayment as cinetpayCheck } from '../services/payments/providers/cinetpay.client.js';
+import { reconcileRecordings } from '../services/recording.service.js';
+import { purgeExpiredAccounts } from '../services/user.service.js';
 import { callProcedure } from '../utils/procedures.js';
 
 import { notifyUser } from './notify.js';
@@ -241,35 +242,82 @@ export async function closeCompetitions() {
  * provider reports success, credits the wallet through the same idempotent
  * stored procedure the webhook uses (`cinetpay_credit_wallet`).
  *
- * @returns {Promise<{ checked: number, credited: number }>}
+ * Le montant crédité est **celui figé à l'initialisation** (`credits_amount`), pas
+ * un recalcul : le cours a pu bouger depuis, et le client a vu un devis.
+ *
+ * Les transactions de plus de 24 h ne sont plus interrogées — elles n'aboutiront
+ * plus et relèvent du support.
+ *
+ * @returns {Promise<{ checked: number, credited: number, closed: number }>}
  * @sideeffect May credit wallets + write `credit_purchases` via procedure.
  */
 export async function retryWebhooks() {
-  const cutoff = new Date(Date.now() - 2 * 60 * 1000); // only txns older than 2 min
   const pending = await db.CinetpayTransaction.findAll({
-    where: { kind: 'payin', status: 'pending', created_at: { [Op.lt]: cutoff } },
+    where: {
+      kind: 'payin',
+      status: 'pending',
+      created_at: {
+        [Op.lt]: new Date(Date.now() - 2 * 60 * 1000),
+        [Op.gt]: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+    },
+    order: [['created_at', 'ASC']],
     limit: 100,
   });
 
   let credited = 0;
+  let closed = 0;
   for (const tx of pending) {
     try {
-      const status = await cinetpayCheck(tx.merchant_transaction_id);
-      const ok = String(status?.code) === '00' || status?.status === 'ACCEPTED';
-      if (!ok) continue;
-      const { credits } = await computeCreditsForRecharge(Number(tx.amount), tx.currency, 'cinetpay');
-      const out = await callProcedure(
-        'cinetpay_credit_wallet',
-        [tx.merchant_transaction_id, Number(credits)],
-        ['ok', 'already', 'error', 'balance'],
-      );
-      if (out.ok && !out.already) credited += 1;
+      const check = await cinetpayCheck({
+        countryCode: tx.country_code,
+        transactionId: tx.merchant_transaction_id,
+      });
+      if (check.accepted) {
+        const out = await callProcedure(
+          'cinetpay_credit_wallet',
+          [tx.merchant_transaction_id, Number(tx.credits_amount)],
+          ['ok', 'already', 'error', 'balance'],
+        );
+        if (out.ok && !out.already) credited += 1;
+      } else if (check.insufficient) {
+        await callProcedure(
+          'cinetpay_fail_payin',
+          [tx.merchant_transaction_id, 'insufficient', `reconcile code=${check.code}`],
+          ['success', 'code'],
+        );
+        closed += 1;
+      }
+      // Tout autre statut = paiement encore en cours : on repassera.
     } catch (err) {
-      logger.warn({ err: err?.message, tx: tx.merchant_transaction_id }, 'webhook retry failed');
+      logger.warn({ err: err?.message, tx: tx.merchant_transaction_id }, 'payin reconciliation failed');
     }
   }
-  if (pending.length) logger.info({ checked: pending.length, credited }, 'webhook reconciliation done');
-  return { checked: pending.length, credited };
+  if (pending.length) logger.info({ checked: pending.length, credited, closed }, 'payin reconciliation done');
+  return { checked: pending.length, credited, closed };
+}
+
+/**
+ * Reconciles CinetPay **transfers** whose notification was lost. Délègue au
+ * service payout pour garantir une logique strictement identique à celle du
+ * webhook (confirmation, remboursement, ou attente).
+ *
+ * @returns {Promise<{ checked: number, confirmed: number, reverted: number, stillPending: number }>}
+ * @sideeffect Peut clôturer des retraits ou recréditer des portefeuilles.
+ */
+export async function reconcilePayouts() {
+  return reconcileCinetpayPayouts();
+}
+
+/**
+ * Surveille les soldes marchands CinetPay et alerte sous le seuil configuré.
+ * Un compte à sec fait échouer tous les transferts du pays sans autre signal.
+ *
+ * @returns {Promise<{ checked: number, alerted: number }>}
+ * @sideeffect Insère des lignes `cinetpay_alerts`.
+ */
+export async function monitorCinetpayBalances() {
+  return checkCinetpayBalances();
 }
 
 /**
@@ -334,6 +382,12 @@ export const JOB_DEFINITIONS = [
   { name: 'event-reminders', handler: sendEventReminders, cron: '*/5 * * * *' },
   { name: 'close-competitions', handler: closeCompetitions, cron: '*/2 * * * *' },
   { name: 'retry-webhooks', handler: retryWebhooks, cron: '*/3 * * * *' },
+  // Les transferts sortants sont réconciliés à part : leur fenêtre de règlement
+  // est plus longue et un retrait bloqué est bien plus visible qu'une recharge.
+  { name: 'reconcile-payouts', handler: reconcilePayouts, cron: '*/5 * * * *' },
+  { name: 'monitor-cinetpay-balances', handler: monitorCinetpayBalances, cron: '0 */2 * * *' },
+  // Filet de sécurité des enregistrements egress (webhooks perdus). No-op si egress off.
+  { name: 'reconcile-recordings', handler: reconcileRecordings, cron: '*/5 * * * *' },
   { name: 'assign-monthly-badges', handler: assignMonthlyBadges, cron: '0 2 1 * *' },
   { name: 'admin-daily-report', handler: adminDailyReport, cron: '30 6 * * *' },
 ];

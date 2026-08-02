@@ -1,4 +1,13 @@
-import { EgressClient, EncodedFileOutput, EncodedFileType, S3Upload } from 'livekit-server-sdk';
+import { Op } from 'sequelize';
+import {
+  EgressClient,
+  EgressStatus,
+  EncodedFileOutput,
+  EncodedFileType,
+  ImageFileSuffix,
+  ImageOutput,
+  S3Upload,
+} from 'livekit-server-sdk';
 
 import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
@@ -68,6 +77,24 @@ function publicUrl(filePath) {
   return `${base}/${filePath.replace(/^\/+/, '')}`;
 }
 
+/** Préfixe de la vignette dérivé de la clé vidéo (`replays/...mp4` → `thumbnails/...`). */
+function thumbBase(filePath) {
+  return filePath.replace(/^replays\//, 'thumbnails/').replace(/\.mp4$/i, '');
+}
+
+/**
+ * Vignette réelle (frame vidéo) issue du webhook egress, uniquement si LiveKit a produit un
+ * vrai fichier image → jamais d'URL cassée (repli couverture géré par l'appelant).
+ */
+function thumbnailFromEgress(egressInfo) {
+  const results = egressInfo?.imageResults || [];
+  for (const r of results) {
+    const key = r?.filename || '';
+    if (key && /\.(jpe?g|png|webp)$/i.test(key)) return publicUrl(key);
+  }
+  return null;
+}
+
 /**
  * Démarre l'enregistrement d'un direct (idempotent par source). No-op si egress off.
  * @param {{ sourceType: 'duel'|'concert'|'competition'|'live', sourceId: string, artistId?: string, createdBy?: string }} p
@@ -104,7 +131,21 @@ export async function startRecording({ sourceType, sourceId, artistId, createdBy
       output: { case: 's3', value: s3Output() },
     });
 
-    const info = await getEgressClient().startRoomCompositeEgress(room, { file: fileOutput }, { layout: 'grid' });
+    // Miniature « pro » : une image extraite de la vidéo, rafraîchie périodiquement et
+    // écrasée sur une clé unique (NONE_OVERWRITE) → la dernière frame sert de vignette.
+    const imageOutput = new ImageOutput({
+      captureInterval: 30,
+      filenamePrefix: thumbBase(filePath),
+      filenameSuffix: ImageFileSuffix.IMAGE_SUFFIX_NONE_OVERWRITE,
+      disableManifest: true,
+      output: { case: 's3', value: s3Output() },
+    });
+
+    const info = await getEgressClient().startRoomCompositeEgress(
+      room,
+      { file: fileOutput, images: imageOutput },
+      { layout: 'grid' },
+    );
 
     rec.egress_id = info?.egressId ?? null;
     rec.status = 'active';
@@ -166,7 +207,7 @@ export async function finalizeFromEgress(egressInfo) {
       artistId: rec.artist_id || rec.created_by,
       title: await recordingTitle(rec),
       videoUrl: publicUrl(rec.file_path),
-      thumbnailUrl: await eventCover(rec.source_type, rec.source_id),
+      thumbnailUrl: thumbnailFromEgress(egressInfo) || (await eventCover(rec.source_type, rec.source_id)),
       duration: String(durationSec),
       isPublic: true,
       recordedDate: rec.started_at || new Date(),
@@ -219,4 +260,66 @@ async function eventCover(sourceType, sourceId) {
   return null;
 }
 
-export default { startRecording, stopRecording, finalizeFromEgress };
+/**
+ * Filet de sécurité (job périodique) : rattrape les enregistrements dont le webhook a été
+ * perdu (crash hôte, redémarrage, webhook manqué). Marque en échec les `pending` bloqués et
+ * interroge l'egress réel pour les `active` afin de les finaliser ou clôturer. No-op si off.
+ * @returns {Promise<{ pendingFailed: number, finalized: number, failed: number }>}
+ */
+export async function reconcileRecordings() {
+  if (!egressReady()) return { pendingFailed: 0, finalized: 0, failed: 0 };
+  const client = getEgressClient();
+  const now = Date.now();
+
+  // 1) `pending` sans egress_id depuis > 10 min → l'appel de démarrage n'a jamais abouti.
+  const stalePending = await db.StreamRecording.findAll({
+    where: { status: 'pending', created_at: { [Op.lt]: new Date(now - 10 * 60 * 1000) } },
+    limit: 100,
+  });
+  for (const r of stalePending) {
+    r.status = 'failed';
+    r.error = r.error || 'never started (reconcile)';
+    r.ended_at = new Date();
+    await r.save().catch(() => {});
+  }
+
+  // 2) `active` : on interroge l'egress réel (webhook potentiellement perdu).
+  const active = await db.StreamRecording.findAll({
+    where: { status: 'active', egress_id: { [Op.ne]: null } },
+    limit: 100,
+  });
+  let finalized = 0;
+  let failed = 0;
+  for (const r of active) {
+    try {
+      const info = (await client.listEgress({ egressId: r.egress_id }))?.[0];
+      if (!info) {
+        // Egress introuvable et enregistrement ancien → on clôt en échec.
+        if (now - new Date(r.started_at || r.created_at).getTime() > 12 * 3600 * 1000) {
+          r.status = 'failed';
+          r.error = 'egress not found (reconcile)';
+          r.ended_at = new Date();
+          await r.save().catch(() => {});
+          failed += 1;
+        }
+        continue;
+      }
+      if (info.status === EgressStatus.EGRESS_COMPLETE) {
+        await finalizeFromEgress(info);
+        finalized += 1;
+      } else if (info.status === EgressStatus.EGRESS_FAILED || info.status === EgressStatus.EGRESS_ABORTED) {
+        r.status = 'failed';
+        r.error = info.error || 'egress failed (reconcile)';
+        r.ended_at = new Date();
+        await r.save().catch(() => {});
+        failed += 1;
+      }
+      // Sinon toujours en cours → on repassera au prochain tick.
+    } catch (err) {
+      logger.warn({ err: err?.message, egressId: r.egress_id }, 'recording reconcile query failed');
+    }
+  }
+  return { pendingFailed: stalePending.length, finalized, failed };
+}
+
+export default { startRecording, stopRecording, finalizeFromEgress, reconcileRecordings };
