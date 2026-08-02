@@ -59,6 +59,9 @@ const schema = Joi.object({
   LIVEKIT_URL: Joi.string().allow('').default(''),
   LIVEKIT_API_KEY: Joi.string().allow('').default(''),
   LIVEKIT_API_SECRET: Joi.string().allow('').default(''),
+  // Enregistrement serveur des directs (LiveKit Egress → R2/S3) pour les replays.
+  // Nécessite un service Egress LiveKit déployé + les creds S3 ci-dessous. Off par défaut.
+  LIVEKIT_EGRESS_ENABLED: Joi.boolean().default(false),
 
   CINETPAY_API_KEY: Joi.string().allow('').default(''),
   CINETPAY_API_PASSWORD: Joi.string().allow('').default(''),
@@ -67,6 +70,11 @@ const schema = Joi.object({
   CINETPAY_ACCOUNTS: Joi.string().allow('').default(''),
   CINETPAY_NOTIFY_URL: Joi.string().allow('').default(''),
   CINETPAY_RETURN_URL: Joi.string().allow('').default(''),
+  // URL de notification des transferts (PayOut). Distincte de celle des
+  // encaissements : les deux flux ont des corps et des états différents.
+  CINETPAY_PAYOUT_NOTIFY_URL: Joi.string().allow('').default(''),
+  // Seuil d'alerte sur le solde marchand, en devise locale. 0 = surveillance off.
+  CINETPAY_BALANCE_ALERT_THRESHOLD: Joi.number().min(0).default(0),
 
   MONEROO_SECRET_KEY: Joi.string().allow('').default(''),
   MONEROO_WEBHOOK_SECRET: Joi.string().allow('').default(''),
@@ -194,6 +202,7 @@ export const config = Object.freeze({
     url: env.LIVEKIT_URL,
     apiKey: env.LIVEKIT_API_KEY,
     apiSecret: env.LIVEKIT_API_SECRET,
+    egressEnabled: env.LIVEKIT_EGRESS_ENABLED,
   },
 
   cinetpay: {
@@ -206,6 +215,8 @@ export const config = Object.freeze({
     accounts: parseJsonSafe(env.CINETPAY_ACCOUNTS),
     notifyUrl: env.CINETPAY_NOTIFY_URL,
     returnUrl: env.CINETPAY_RETURN_URL,
+    payoutNotifyUrl: env.CINETPAY_PAYOUT_NOTIFY_URL,
+    balanceAlertThreshold: env.CINETPAY_BALANCE_ALERT_THRESHOLD,
   },
 
   moneroo: { secretKey: env.MONEROO_SECRET_KEY, webhookSecret: env.MONEROO_WEBHOOK_SECRET },

@@ -14,6 +14,7 @@ import { globalLimiter } from './middlewares/rateLimit.js';
 import { requestId } from './middlewares/requestId.js';
 import { docsRouter } from './openapi/docs.routes.js';
 import { apiRouter } from './routes/index.js';
+import { livekitWebhookRouter } from './routes/livekitWebhook.routes.js';
 import { mediaRouter } from './routes/media.routes.js';
 
 /**
@@ -77,6 +78,11 @@ export function createApp() {
 
   app.use(compression());
   app.use(cookieParser());
+
+  // Webhook LiveKit Egress — monté AVANT express.json : la vérification de signature
+  // (WebhookReceiver) exige le corps brut, et LiveKit envoie `application/webhook+json`.
+  app.use('/webhooks/livekit', livekitWebhookRouter);
+
   app.use(express.json({ limit: '2mb', verify: captureRawBody }));
   app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 

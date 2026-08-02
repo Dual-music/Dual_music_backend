@@ -6,6 +6,7 @@ import { emitToRoom, roomName } from '../realtime/bus.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
 
+import { startRecording, stopRecording } from './recording.service.js';
 import { getDisplayProfiles } from './user.service.js';
 
 /** Room for a live's realtime channel. */
@@ -104,6 +105,8 @@ export async function startLive(artistId, input) {
   });
   // Fan-out best-effort : prévient les abonnés de l'artiste qu'un live démarre.
   void notifyFollowersLiveStarted(artistId, live).catch(() => {});
+  // Enregistrement serveur (egress) pour le replay — no-op si egress désactivé.
+  void startRecording({ sourceType: 'live', sourceId: live.id, artistId, createdBy: artistId }).catch(() => {});
   return live;
 }
 
@@ -144,6 +147,8 @@ export async function endLive(id, actorId, roles = []) {
   live.ended_at = new Date();
   await live.save();
   emitToRoom('/live', liveRoom(id), 'status', { live_id: id, status: 'ended' });
+  // Stoppe l'egress → le webhook egress_ended crée le replay.
+  void stopRecording({ sourceType: 'live', sourceId: id }).catch(() => {});
   return live;
 }
 
@@ -168,6 +173,9 @@ export async function updateLiveStatus(id, actorId, roles = [], status) {
   if (status === 'ended' && !live.ended_at) live.ended_at = new Date();
   await live.save();
   emitToRoom('/live', liveRoom(id), 'status', { live_id: id, status });
+  // Egress : démarre au passage en live, stoppe à la fin (no-op si egress désactivé).
+  if (status === 'live') void startRecording({ sourceType: 'live', sourceId: id, artistId: live.artist_id, createdBy: live.artist_id }).catch(() => {});
+  if (status === 'ended') void stopRecording({ sourceType: 'live', sourceId: id }).catch(() => {});
   return live;
 }
 

@@ -6,6 +6,7 @@ import { emitToRoom, roomName } from '../realtime/bus.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
 
+import { startRecording, stopRecording } from './recording.service.js';
 import { getDisplayProfiles } from './user.service.js';
 
 /**
@@ -174,6 +175,9 @@ export async function updateDuel(id, actor, roles, patch) {
       target_id: duel.current_timer_target_id,
     });
   }
+  // Egress : enregistre le duel du passage en live à la fin (no-op si egress désactivé).
+  if (patch.status === 'live') void startRecording({ sourceType: 'duel', sourceId: id, artistId: duel.artist1_id, createdBy: duel.manager_id || duel.artist1_id }).catch(() => {});
+  if (patch.status === 'ended') void stopRecording({ sourceType: 'duel', sourceId: id }).catch(() => {});
   // Notifie le vainqueur quand un gagnant est annoncé.
   if (patch.winnerId) {
     void notifyUser({

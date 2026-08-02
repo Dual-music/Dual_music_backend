@@ -9,6 +9,7 @@ import { callProcedure } from '../utils/procedures.js';
 import { sanitizeText } from '../utils/sanitize.js';
 
 import { getDisplayProfiles } from './user.service.js';
+import { startRecording, stopRecording } from './recording.service.js';
 
 /** Reads the dedication config section (concert vs live) from economic_config. */
 async function dedicationConfig(concertType) {
@@ -414,6 +415,9 @@ export async function updateArtistConcert(id, actorId, roles, patch) {
   await concert.save();
   if ('status' in patch) {
     emitToRoom('/live', roomName('concert', id), 'status', { concert_id: id, status: concert.status });
+    // Egress : enregistre le concert du passage en live à la fin (no-op si egress désactivé).
+    if (patch.status === 'live') void startRecording({ sourceType: 'concert', sourceId: id, artistId: concert.artist_id, createdBy: concert.artist_id }).catch(() => {});
+    if (patch.status === 'ended') void stopRecording({ sourceType: 'concert', sourceId: id }).catch(() => {});
   }
   return concert;
 }

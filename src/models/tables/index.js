@@ -65,6 +65,7 @@ import defineSponsorAdVideo from './SponsorAdVideo.model.js';
 import defineSponsorPriceTier from './SponsorPriceTier.model.js';
 import defineSponsorRequest from './SponsorRequest.model.js';
 import defineStreamBan from './StreamBan.model.js';
+import defineStreamRecording from './StreamRecording.model.js';
 import defineSubscriptionPlan from './SubscriptionPlan.model.js';
 import defineUserBadge from './UserBadge.model.js';
 import defineUserCurrencyPreference from './UserCurrencyPreference.model.js';
@@ -153,6 +154,7 @@ export const generatedModels = [
   { name: 'SponsorPriceTier', define: defineSponsorPriceTier },
   { name: 'SponsorRequest', define: defineSponsorRequest },
   { name: 'StreamBan', define: defineStreamBan },
+  { name: 'StreamRecording', define: defineStreamRecording },
   { name: 'SubscriptionPlan', define: defineSubscriptionPlan },
   { name: 'UserBadge', define: defineUserBadge },
   { name: 'UserCurrencyPreference', define: defineUserCurrencyPreference },
