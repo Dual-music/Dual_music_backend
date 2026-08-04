@@ -40,6 +40,7 @@ export default function defineCompetition(sequelize) {
     reward_amount: { type: DataTypes.DECIMAL(18, 2), allowNull: true, defaultValue: 0 },
     reward_description: { type: DataTypes.TEXT, allowNull: true },
     sponsor_submission_deadline: { type: DataTypes.DATE, allowNull: true },
+    accepts_sponsors: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     start_at: { type: DataTypes.DATE, allowNull: false },
     status: { type: DataTypes.STRING, allowNull: false },
     title: { type: DataTypes.STRING, allowNull: false },

@@ -104,6 +104,7 @@ export async function createCompetition(managerId, input) {
     eligibility_scope: input.eligibilityScope ?? 'all',
     eligible_countries: input.eligibleCountries ?? '',
     application_opens_at: input.applicationOpensAt ?? null,
+    accepts_sponsors: input.acceptsSponsors ?? true,
     status: 'draft',
   });
 }
@@ -136,6 +137,7 @@ const COMPETITION_UPDATABLE = {
   eligibilityScope: 'eligibility_scope',
   eligibleCountries: 'eligible_countries',
   applicationOpensAt: 'application_opens_at',
+  acceptsSponsors: 'accepts_sponsors',
   managerId: 'manager_id',
 };
 

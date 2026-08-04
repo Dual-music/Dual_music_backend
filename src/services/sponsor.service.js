@@ -110,6 +110,10 @@ export async function createRequest(requesterId, input) {
 
   const event = await db[def.model].findByPk(input.eventId, { raw: true });
   if (!event) throw ApiError.notFound('EVENT_NOT_FOUND');
+  // Le manager peut refuser les sponsors sur une compétition → aucune demande possible.
+  if (input.eventType === 'competition' && event.accepts_sponsors === false) {
+    throw ApiError.badRequest('SPONSOR_NOT_ACCEPTED', { details: { eventType: input.eventType } });
+  }
   const deadline = event[def.deadline];
   if (deadline && new Date(deadline) < new Date()) {
     throw ApiError.conflict('SPONSOR_DEADLINE_PASSED', { details: { deadline } });
