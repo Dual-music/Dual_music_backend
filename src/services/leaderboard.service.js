@@ -416,7 +416,9 @@ export async function markRewardReceived(id, userId) {
  */
 export async function getAllTimeArtists(limit = 50) {
   return db.sequelize.query(
-    `SELECT p.id, p.full_name AS name, p.avatar_url,
+    `SELECT p.id,
+            COALESCE(NULLIF(p.full_name,''), NULLIF(ap.stage_name,''), SUBSTRING_INDEX(p.email,'@',1)) AS name,
+            p.avatar_url,
             (COALESCE(v.votes,0) + COALESCE(g.gifts_value,0)) AS score
        FROM artist_profiles ap
        JOIN profiles p ON p.id = ap.user_id
@@ -438,9 +440,12 @@ export async function getAllTimeArtists(limit = 50) {
  */
 export async function getAllTimeDonors(limit = 50) {
   return db.sequelize.query(
-    `SELECT p.id, p.full_name AS name, p.avatar_url,
+    `SELECT p.id,
+            COALESCE(NULLIF(p.full_name,''), NULLIF(ap.stage_name,''), SUBSTRING_INDEX(p.email,'@',1)) AS name,
+            p.avatar_url,
             (COALESCE(gv.given,0) + COALESCE(vv.given,0)) AS score
        FROM profiles p
+       LEFT JOIN artist_profiles ap ON ap.user_id = p.id
        LEFT JOIN (SELECT gt.from_user_id, SUM(vg.price) AS given
                     FROM gift_transactions gt LEFT JOIN virtual_gifts vg ON vg.id = gt.gift_id
                    GROUP BY gt.from_user_id) gv ON gv.from_user_id = p.id
