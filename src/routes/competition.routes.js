@@ -32,8 +32,16 @@ const venueFields = {
   venueAddress: Joi.string().max(2000).allow('', null),
   venueContact: Joi.string().max(200).allow('', null),
   eligibilityScope: Joi.string().max(50).allow('', null),
-  eligibleCountries: Joi.string().max(2000).allow('', null),
+  // Le front envoie soit un tableau de codes ISO, soit une chaîne CSV → on accepte les deux
+  // (sinon 422 sur un tableau).
+  eligibleCountries: Joi.alternatives().try(
+    Joi.array().items(Joi.string().max(10)),
+    Joi.string().max(2000),
+  ).allow('', null),
   applicationOpensAt: Joi.date().iso().allow(null),
+  // Sponsors : sinon ces clés étaient dépouillées (stripUnknown) et n'atteignaient jamais le service.
+  acceptsSponsors: Joi.boolean(),
+  sponsorSubmissionDeadline: Joi.date().iso().allow(null),
   managerId: uuid.allow(null),
 };
 const createSchema = {
