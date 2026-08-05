@@ -105,6 +105,8 @@ export async function createCompetition(managerId, input) {
     eligible_countries: input.eligibleCountries ?? '',
     application_opens_at: input.applicationOpensAt ?? null,
     accepts_sponsors: input.acceptsSponsors ?? true,
+    // Deadline sponsor saisie dans le formulaire (uniquement si les sponsors sont acceptés).
+    sponsor_submission_deadline: input.acceptsSponsors === false ? null : (input.sponsorSubmissionDeadline ?? null),
     status: 'draft',
   });
 }
@@ -138,6 +140,7 @@ const COMPETITION_UPDATABLE = {
   eligibleCountries: 'eligible_countries',
   applicationOpensAt: 'application_opens_at',
   acceptsSponsors: 'accepts_sponsors',
+  sponsorSubmissionDeadline: 'sponsor_submission_deadline',
   managerId: 'manager_id',
 };
 
