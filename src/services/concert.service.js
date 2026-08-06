@@ -306,12 +306,15 @@ export async function createArtistConcert(artistId, input) {
   return concert;
 }
 
-/** L'admin exige-t-il l'approbation des concerts d'artistes ? (réglage `concert_approval_required`, défaut oui). */
+/**
+ * L'admin exige-t-il l'approbation des concerts d'artistes ?
+ * Réglage `concert_approval_config` = `{ require_admin_approval: boolean }`
+ * (écrit par le PlatformConfigManager web). Défaut : oui (approbation requise).
+ */
 async function concertApprovalRequired() {
-  const row = await db.PlatformSetting.findByPk('concert_approval_required', { raw: true }).catch(() => null);
+  const row = await db.PlatformSetting.findByPk('concert_approval_config', { raw: true }).catch(() => null);
   const v = row?.value;
-  if (v === false) return false;
-  if (v && typeof v === 'object' && v.enabled === false) return false;
+  if (v && typeof v === 'object' && v.require_admin_approval === false) return false;
   return true;
 }
 
