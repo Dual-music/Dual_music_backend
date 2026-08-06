@@ -26,6 +26,8 @@ export const updateProfileSchema = {
     country_code: Joi.string().max(4).uppercase(),
     phone: Joi.string().max(32).allow('', null),
     phone_country_code: Joi.string().max(6).allow('', null),
+    birth_date: Joi.string().max(20).allow('', null),
+    gender: Joi.string().max(20).allow('', null),
   }).min(1),
 };
 

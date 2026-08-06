@@ -19,6 +19,8 @@ export default function defineProfile(sequelize) {
     banned_reason: { type: DataTypes.TEXT, allowNull: true },
     banned_until: { type: DataTypes.DATE, allowNull: true },
     bio: { type: DataTypes.TEXT, allowNull: true },
+    birth_date: { type: DataTypes.DATEONLY, allowNull: true },
+    gender: { type: DataTypes.STRING, allowNull: true },
     country_code: { type: DataTypes.STRING, allowNull: true, defaultValue: 'FR' },
     created_at: { type: DataTypes.DATE, allowNull: true, defaultValue: DataTypes.NOW },
     email: { type: DataTypes.STRING, allowNull: false },
