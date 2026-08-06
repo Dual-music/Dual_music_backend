@@ -39,6 +39,7 @@ duelRouter.get('/votes/batch', duelController.votesBatch);
 duelRouter.get('/votes/mine', authenticate(), duelController.myVotes);
 duelRouter.post('/requests', authenticate(), validate(schemas.requestSchema), duelController.createRequest);
 duelRouter.post('/requests/:id/respond', authenticate(), validate(schemas.respondSchema), duelController.respondRequest);
+duelRouter.patch('/requests/:id', authenticate(), validate(schemas.changeDateSchema), duelController.changeRequestDate);
 
 duelRouter.get('/:id', optionalAuth(), validate(schemas.idParam), duelController.getOne);
 duelRouter.patch('/:id', authenticate(), validate(schemas.updateSchema), duelController.update);

@@ -286,7 +286,9 @@ export async function listArtistConcerts(query) {
  * @returns {Promise<object>}
  */
 export async function createArtistConcert(artistId, input) {
-  return db.ArtistConcert.create({
+  // L'admin peut désactiver l'exigence d'approbation (réglage) → concert publié directement.
+  const requireApproval = await concertApprovalRequired();
+  const concert = await db.ArtistConcert.create({
     artist_id: artistId,
     title: input.title,
     description: input.description ?? null,
@@ -296,9 +298,42 @@ export async function createArtistConcert(artistId, input) {
     cover_image_url: input.coverImageUrl ?? null,
     allows_dedications: input.allowsDedications ?? true,
     allows_sponsor_ads: input.allowsSponsorAds ?? true,
-    approval_status: 'pending',
+    approval_status: requireApproval ? 'pending' : 'approved',
     status: 'upcoming',
   });
+  // Alerte les admins qu'un concert attend validation (in-app + push + email).
+  if (concert.approval_status === 'pending') void notifyAdminsConcertPending(concert).catch(() => {});
+  return concert;
+}
+
+/** L'admin exige-t-il l'approbation des concerts d'artistes ? (réglage `concert_approval_required`, défaut oui). */
+async function concertApprovalRequired() {
+  const row = await db.PlatformSetting.findByPk('concert_approval_required', { raw: true }).catch(() => null);
+  const v = row?.value;
+  if (v === false) return false;
+  if (v && typeof v === 'object' && v.enabled === false) return false;
+  return true;
+}
+
+/** Prévient tous les admins qu'un concert attend leur validation. */
+async function notifyAdminsConcertPending(concert) {
+  const [admins, artist] = await Promise.all([
+    db.UserRole.findAll({ where: { role: 'admin' }, attributes: ['user_id'], raw: true }).catch(() => []),
+    db.Profile.findByPk(concert.artist_id, { attributes: ['full_name'], raw: true }).catch(() => null),
+  ]);
+  await Promise.allSettled(
+    admins.map((a) =>
+      notifyUser({
+        userId: a.user_id,
+        type: 'concert_approval',
+        title: 'Concert à valider',
+        message: `${artist?.full_name || 'Un artiste'} a soumis le concert « ${concert.title} » pour validation.`,
+        data: { concert_id: concert.id },
+        email: true,
+        push: true,
+      }),
+    ),
+  );
 }
 
 /**
@@ -394,6 +429,11 @@ export async function updateArtistConcert(id, actorId, roles, patch) {
   if (!concert) throw ApiError.notFound('NOT_FOUND');
   const isAdmin = roles.includes('admin');
   if (concert.artist_id !== actorId && !isAdmin) throw ApiError.forbidden('FORBIDDEN');
+
+  // Un concert non approuvé ne peut PAS passer en direct (parité : invisible + non lançable).
+  if (patch.status === 'live' && concert.approval_status !== 'approved') {
+    throw ApiError.badRequest('CONCERT_NOT_APPROVED', { details: { approvalStatus: concert.approval_status } });
+  }
 
   const map = {
     title: 'title', description: 'description', scheduledDate: 'scheduled_date',

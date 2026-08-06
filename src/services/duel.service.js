@@ -200,7 +200,7 @@ export async function updateDuel(id, actor, roles, patch) {
  */
 export async function createDuelRequest(requesterId, input) {
   if (requesterId === input.opponentId) throw ApiError.badRequest('BAD_REQUEST');
-  return db.DuelRequest.create({
+  const request = await db.DuelRequest.create({
     requester_id: requesterId,
     opponent_id: input.opponentId,
     proposed_date: input.proposedDate ?? null,
@@ -208,6 +208,18 @@ export async function createDuelRequest(requesterId, input) {
     manager_id: input.managerId ?? null,
     status: 'pending',
   });
+  // Prévient l'adversaire qu'il a reçu une invitation de duel (in-app + push + email).
+  const requester = await db.Profile.findByPk(requesterId, { attributes: ['full_name'], raw: true }).catch(() => null);
+  void notifyUser({
+    userId: input.opponentId,
+    type: 'duel_request',
+    title: 'Nouvelle invitation de duel ⚔️',
+    message: `${requester?.full_name || 'Un artiste'} vous a défié en duel.`,
+    data: { request_id: request.id },
+    email: true,
+    push: true,
+  }).catch(() => {});
+  return request;
 }
 
 /**
@@ -219,7 +231,7 @@ export async function createDuelRequest(requesterId, input) {
  * @returns {Promise<{ request: object, duel: object|null }>}
  */
 export async function respondDuelRequest(requestId, responderId, accept) {
-  return db.sequelize.transaction(async (tx) => {
+  const result = await db.sequelize.transaction(async (tx) => {
     const req = await db.DuelRequest.findByPk(requestId, { transaction: tx });
     if (!req) throw ApiError.notFound('NOT_FOUND');
     if (req.opponent_id !== responderId) throw ApiError.forbidden('FORBIDDEN');
@@ -244,6 +256,56 @@ export async function respondDuelRequest(requestId, responderId, accept) {
     }
     return { request: req, duel };
   });
+  // Prévient l'initiateur de la décision de l'adversaire (in-app + push + email).
+  const opponent = await db.Profile.findByPk(responderId, { attributes: ['full_name'], raw: true }).catch(() => null);
+  void notifyUser({
+    userId: result.request.requester_id,
+    type: 'duel_request',
+    title: accept ? 'Duel accepté ✅' : 'Duel refusé',
+    message: accept
+      ? `${opponent?.full_name || 'Votre adversaire'} a accepté votre duel.`
+      : `${opponent?.full_name || 'Votre adversaire'} a refusé votre duel.`,
+    data: { request_id: result.request.id, duel_id: result.duel?.id ?? null },
+    email: true,
+    push: true,
+  }).catch(() => {});
+  return result;
+}
+
+/**
+ * Change la date proposée d'une invitation de duel EN ATTENTE (initiateur ou admin).
+ * Notifie l'adversaire (et l'initiateur si modifié par l'admin) du changement.
+ * @param {string} requestId
+ * @param {string} actorId
+ * @param {string[]} roles
+ * @param {string} newDate ISO.
+ * @returns {Promise<object>}
+ */
+export async function changeDuelRequestDate(requestId, actorId, roles, newDate) {
+  const req = await db.DuelRequest.findByPk(requestId);
+  if (!req) throw ApiError.notFound('NOT_FOUND');
+  const isAdmin = roles.includes('admin');
+  if (req.requester_id !== actorId && !isAdmin) throw ApiError.forbidden('FORBIDDEN');
+  if (req.status !== 'pending') throw ApiError.conflict('CONFLICT', { details: { status: req.status } });
+  req.proposed_date = newDate ?? null;
+  req.updated_at = new Date();
+  await req.save();
+  // Notifie les deux parties du nouveau créneau.
+  const targets = [req.opponent_id, req.requester_id].filter((id) => id && id !== actorId);
+  await Promise.allSettled(
+    targets.map((userId) =>
+      notifyUser({
+        userId,
+        type: 'duel_request',
+        title: 'Date du duel modifiée 📅',
+        message: 'La date proposée pour un duel a été modifiée.',
+        data: { request_id: req.id },
+        email: true,
+        push: true,
+      }),
+    ),
+  );
+  return req;
 }
 
 /**
@@ -347,6 +409,7 @@ export default {
   updateDuel,
   createDuelRequest,
   respondDuelRequest,
+  changeDuelRequestDate,
   listMyDuelRequests,
   getMyVoteHistory,
 };

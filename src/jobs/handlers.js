@@ -375,8 +375,40 @@ export async function adminDailyReport() {
  * expression (UTC). Consumed by both the BullMQ scheduler and the fallback.
  * @type {Array<{ name: string, handler: () => Promise<unknown>, cron: string }>}
  */
+/**
+ * Auto-annule les invitations de duel EN ATTENTE dont la date proposée est dépassée sans réponse.
+ * Passe leur statut à `expired` et prévient les deux artistes (in-app + push).
+ */
+export async function expireDuelRequests() {
+  const stale = await db.DuelRequest.findAll({
+    where: { status: 'pending', proposed_date: { [Op.ne]: null, [Op.lt]: new Date() } },
+    limit: 200,
+  });
+  for (const req of stale) {
+    req.status = 'expired';
+    req.updated_at = new Date();
+    await req.save().catch(() => {});
+    await Promise.allSettled(
+      [req.requester_id, req.opponent_id].filter(Boolean).map((userId) =>
+        notifyUser({
+          userId,
+          type: 'duel_request',
+          title: 'Invitation de duel expirée ⌛',
+          message: 'Une invitation de duel a été annulée automatiquement (date dépassée sans réponse).',
+          data: { request_id: req.id },
+          push: true,
+        }),
+      ),
+    );
+  }
+  if (stale.length) logger.info({ count: stale.length }, 'expired stale duel requests');
+  return { expired: stale.length };
+}
+
 export const JOB_DEFINITIONS = [
   { name: 'refresh-exchange-rates', handler: refreshExchangeRates, cron: '0 4 * * *' },
+  // Auto-annulation des invitations de duel non répondues (date dépassée), toutes les 10 min.
+  { name: 'expire-duel-requests', handler: expireDuelRequests, cron: '*/10 * * * *' },
   // Purge quotidienne (03:15 UTC) des comptes dont le délai de grâce de 20 j est écoulé.
   { name: 'purge-deleted-accounts', handler: purgeExpiredAccounts, cron: '15 3 * * *' },
   { name: 'event-reminders', handler: sendEventReminders, cron: '*/5 * * * *' },

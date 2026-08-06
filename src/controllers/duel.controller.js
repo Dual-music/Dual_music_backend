@@ -58,6 +58,12 @@ export async function respondRequest(req, res) {
   return sendSuccess(res, result);
 }
 
+/** PATCH /duels/requests/:id — change la date proposée (initiateur ou admin). */
+export async function changeRequestDate(req, res) {
+  const request = await duelService.changeDuelRequestDate(req.params.id, req.user.id, req.roles || [], req.body.proposedDate);
+  return sendSuccess(res, request);
+}
+
 /** GET /duels/requests/mine */
 export async function myRequests(req, res) {
   return sendSuccess(res, await duelService.listMyDuelRequests(req.user.id));
@@ -73,4 +79,4 @@ export async function myTicket(req, res) {
   return sendSuccess(res, await duelService.getMyDuelTicket(req.params.id, req.user?.id ?? null));
 }
 
-export default { list, batch, getOne, votes, votesBatch, myTicket, create, update, createRequest, respondRequest, myRequests, myVotes };
+export default { list, batch, getOne, votes, votesBatch, myTicket, create, update, createRequest, respondRequest, changeRequestDate, myRequests, myVotes };

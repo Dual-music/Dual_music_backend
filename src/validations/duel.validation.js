@@ -51,9 +51,14 @@ export const requestSchema = {
   }),
 };
 
+export const changeDateSchema = {
+  params: Joi.object({ id: uuid.required() }),
+  body: Joi.object({ proposedDate: Joi.date().iso().allow(null) }),
+};
+
 export const respondSchema = {
   params: Joi.object({ id: uuid.required() }),
   body: Joi.object({ accept: Joi.boolean().required() }),
 };
 
-export default { listSchema, idParam, createSchema, updateSchema, requestSchema, respondSchema };
+export default { listSchema, idParam, createSchema, updateSchema, requestSchema, changeDateSchema, respondSchema };
