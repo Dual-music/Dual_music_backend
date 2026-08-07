@@ -114,7 +114,9 @@ export async function createDuel(creatorId, creatorRoles, input) {
     artist1_id: input.artist1Id,
     artist2_id: input.artist2Id,
     manager_id: creatorRoles.includes('manager') ? creatorId : null,
-    scheduled_time: input.scheduledTime ?? null,
+    // `Duel.scheduled_time` est une colonne STRING (ISO) ; `scheduledTime` peut arriver
+    // en Date (Joi.date().iso() convertit) → on sérialise, sinon Sequelize rejette l'objet.
+    scheduled_time: input.scheduledTime ? new Date(input.scheduledTime).toISOString() : null,
     ticket_price: input.ticketPrice ?? 0,
     status: 'upcoming',
   });
@@ -248,7 +250,8 @@ export async function respondDuelRequest(requestId, responderId, accept) {
           artist1_id: req.requester_id,
           artist2_id: req.opponent_id,
           manager_id: req.manager_id ?? null,
-          scheduled_time: req.proposed_date ?? null,
+          // proposed_date est un DATE (objet) ; scheduled_time est une colonne STRING → sérialiser.
+          scheduled_time: req.proposed_date ? new Date(req.proposed_date).toISOString() : null,
           status: 'upcoming',
         },
         { transaction: tx },
