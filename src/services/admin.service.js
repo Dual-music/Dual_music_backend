@@ -673,7 +673,12 @@ export async function approveDuelRequest({ id, managerId, scheduledDate, ticketP
         artist1_id: req.requester_id,
         artist2_id: req.opponent_id,
         manager_id: managerId ?? req.manager_id ?? null,
-        scheduled_time: scheduledDate ?? req.proposed_date ?? null,
+        // scheduled_time est une colonne STRING ; proposed_date est un DATE (objet) → sérialiser
+        // (sinon Sequelize rejette « cannot be an array or an object » à l'approbation admin).
+        scheduled_time: (() => {
+          const v = scheduledDate ?? req.proposed_date ?? null;
+          return v ? new Date(v).toISOString() : null;
+        })(),
         ticket_price: ticketPrice ?? 0,
         allows_sponsor_ads: allowsSponsorAds ?? false,
         status: 'upcoming',
