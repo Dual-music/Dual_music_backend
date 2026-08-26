@@ -105,14 +105,23 @@ export async function sendGift(userId, { giftId, toUserId, duelId = null, liveId
   );
   if (!out.success) throw errorFromCode(out.code);
   // Real-time leaderboard update (best-effort): use the gift's credit value.
-  const gift = await db.VirtualGift.findByPk(giftId, { attributes: ['price'], raw: true });
+  // Also fetch name + image so the on-stage animation can show the ACTUAL gift (web + mobile).
+  const gift = await db.VirtualGift.findByPk(giftId, { attributes: ['price', 'name', 'image_url'], raw: true });
   const value = Number(gift?.price ?? 0);
   void recordGift({ receiverId: toUserId, senderId: userId, value });
   // Notify the recipient so their transaction toast can fire.
   emitToUser(toUserId, 'tx:gift', { amount: value });
   // Live gift feed on the event stage.
   const ctx = duelId ? ['duel', duelId] : liveId ? ['live', liveId] : concertId ? ['concert', concertId] : null;
-  if (ctx) emitToRoom('/live', roomName(ctx[0], ctx[1]), 'gift', { to_user_id: toUserId, from_user_id: userId, value });
+  if (ctx) {
+    emitToRoom('/live', roomName(ctx[0], ctx[1]), 'gift', {
+      to_user_id: toUserId,
+      from_user_id: userId,
+      value,
+      gift_name: gift?.name ?? null,
+      gift_image: gift?.image_url ?? null,
+    });
+  }
   // Notification durable au destinataire (in-app + temps réel + push ; email opt-in).
   void notifyUser({
     userId: toUserId,
