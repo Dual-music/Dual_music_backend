@@ -62,6 +62,12 @@ export const MESSAGES = {
   WEBHOOK_SIGNATURE_INVALID: { fr: 'Signature de webhook invalide.', en: 'Invalid webhook signature.' },
   WEBHOOK_REPLAYED: { fr: 'Webhook déjà traité.', en: 'Webhook already processed.' },
   STRIPE_NOT_CONFIGURED: { fr: "Le paiement par carte n'est pas configuré.", en: 'Card payment is not configured.' },
+  APPLE_IAP_NOT_CONFIGURED: { fr: "Les achats intégrés Apple ne sont pas configurés.", en: 'Apple in-app purchases are not configured.' },
+  APPLE_VERIFY_FAILED: { fr: 'Vérification Apple impossible.', en: 'Apple verification failed.' },
+  APPLE_RECEIPT_INVALID: { fr: 'Reçu Apple invalide.', en: 'Invalid Apple receipt.' },
+  APPLE_TRANSACTION_REVOKED: { fr: 'Cette transaction a été remboursée ou révoquée.', en: 'This transaction was refunded or revoked.' },
+  APPLE_PRODUCT_UNKNOWN: { fr: 'Produit Apple inconnu.', en: 'Unknown Apple product.' },
+  WALLET_CREDIT_FAILED: { fr: 'Le crédit du portefeuille a échoué.', en: 'Crediting the wallet failed.' },
 
   // --- Withdrawals & PIN -----------------------------------------------------
   PIN_NOT_SET: { fr: "Aucun code PIN de retrait n'est défini.", en: 'No withdrawal PIN is set.' },
