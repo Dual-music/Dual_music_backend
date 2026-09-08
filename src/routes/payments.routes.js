@@ -17,6 +17,7 @@ import * as schemas from '../validations/payments.validation.js';
  * | POST | /moneroo/init | Bearer | {amount, currency, phone?, email?} → checkout_url |
  * | POST | /stripe/credits | Bearer | {amount, currency} → checkout url |
  * | POST | /stripe/subscription | Bearer | {plan: pro|premium} → checkout url |
+ * | POST | /apple/verify | Bearer | {transactionId} → settles an already-paid StoreKit purchase (iOS) |
  * | POST | /cinetpay/webhook | public | server-to-server re-check + idempotent credit |
  * | POST | /moneroo/webhook | public | HMAC-verified + idempotent credit |
  * | POST | /stripe/webhook | public | signed event, raw body |
@@ -36,6 +37,15 @@ paymentsRouter.post(
   validate(schemas.stripeSubscriptionSchema),
   idempotency(),
   paymentsController.initStripeSubscription,
+);
+// Client-driven settlement (iOS already paid via StoreKit) — not a checkout init,
+// but financial/idempotent like the others above.
+paymentsRouter.post(
+  '/apple/verify',
+  authenticate(),
+  validate(schemas.appleVerifySchema),
+  idempotency(),
+  paymentsController.verifyAppleIAP,
 );
 
 // --- Public reference data ---

@@ -125,3 +125,40 @@ proc: BEGIN
   COMMIT;
   SET p_ok = TRUE;
 END;
+-- @sep
+-- credit_wallet_apple — settles an Apple StoreKit (iOS) credit purchase
+-- idempotently, keyed by the StoreKit transactionId recorded in
+-- credit_purchases.payment_reference. Sibling of credit_wallet_stripe: the only
+-- difference is payment_method — kept as a separate procedure (not a shared
+-- p_provider param) so each provider's settlement stays independently readable
+-- and testable, matching the existing one-procedure-per-provider convention.
+DROP PROCEDURE IF EXISTS credit_wallet_apple;
+-- @sep
+CREATE PROCEDURE credit_wallet_apple(
+  IN  p_user_id   CHAR(36),
+  IN  p_reference CHAR(120),
+  IN  p_credits   DECIMAL(18,2),
+  IN  p_paid      DECIMAL(18,2),
+  IN  p_currency  VARCHAR(10),
+  OUT p_ok        BOOLEAN,
+  OUT p_already   BOOLEAN
+)
+proc: BEGIN
+  DECLARE v_exists INT DEFAULT 0;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
+
+  SET p_ok = FALSE; SET p_already = FALSE;
+  START TRANSACTION;
+  SELECT COUNT(*) INTO v_exists FROM credit_purchases WHERE payment_reference = p_reference;
+  IF v_exists > 0 THEN SET p_ok = TRUE; SET p_already = TRUE; COMMIT; LEAVE proc; END IF;
+
+  INSERT INTO user_wallets (user_id, balance, updated_at) VALUES (p_user_id, p_credits, UTC_TIMESTAMP())
+    ON DUPLICATE KEY UPDATE balance = balance + p_credits, updated_at = UTC_TIMESTAMP();
+
+  INSERT INTO credit_purchases
+    (id, user_id, credits_amount, paid_amount, currency, payment_method, status, payment_reference, created_at)
+    VALUES (UUID(), p_user_id, p_credits, p_paid, p_currency, 'apple_iap', 'completed', p_reference, UTC_TIMESTAMP());
+
+  COMMIT;
+  SET p_ok = TRUE;
+END;

@@ -38,6 +38,12 @@ export async function initStripeSubscription(req, res) {
   return sendSuccess(res, data, { status: 201 });
 }
 
+/** POST /payments/apple/verify — settles an already-paid StoreKit purchase. */
+export async function verifyAppleIAP(req, res) {
+  const data = await payments.verifyAppleCredits({ userId: req.user.id, transactionId: req.body.transactionId });
+  return sendSuccess(res, data, { status: 201 });
+}
+
 /** GET /payments/cinetpay/countries (public) */
 export async function cinetpayCountries(_req, res) {
   return sendSuccess(res, await payments.listCinetpayCountries());
@@ -93,6 +99,7 @@ export default {
   initMoneroo,
   initStripeCredits,
   initStripeSubscription,
+  verifyAppleIAP,
   cinetpayCountries,
   history,
   transactionByMerchant,

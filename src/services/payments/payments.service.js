@@ -7,7 +7,10 @@ import { randomToken } from '../../utils/crypto.js';
 import { callProcedure } from '../../utils/procedures.js';
 import { claimWebhookEvent, markWebhookProcessed } from '../webhook.service.js';
 
+import { creditsForAppleProduct } from '../../config/appleIAPProducts.js';
+
 import { computeCreditsForRecharge } from './pricing.service.js';
+import * as apple from './providers/apple.client.js';
 import * as cinetpay from './providers/cinetpay.client.js';
 import * as moneroo from './providers/moneroo.client.js';
 import * as stripe from './providers/stripe.client.js';
@@ -264,6 +267,49 @@ export async function initStripeSubscription({ userId, plan }) {
     cancelUrl: `${base}/profile?sub=cancel`,
   });
   return { url: session.url };
+}
+
+/**
+ * Settles an Apple StoreKit (iOS) credit purchase. Unlike every other provider
+ * here, the client has ALREADY paid (via `Product.purchase()`, StoreKit 2) by the
+ * time this is called — this is a verify-then-settle, not an init-checkout, flow.
+ *
+ * Never trusts the client for `productId`/`credits`: re-fetches the transaction
+ * from Apple (`apple.fetchVerifiedTransaction`, App Store Server API, signature +
+ * app + environment checked against our own configured bundle id), then looks up
+ * `credits` from OUR OWN static catalog (`appleIAPProducts.js`) keyed by the
+ * PRODUCT ID APPLE RETURNED — not the client-supplied `transactionId` alone. A
+ * refunded/revoked transaction (`revocationDate` set) is rejected, never credited.
+ *
+ * Idempotent via `credit_wallet_apple`, keyed on the StoreKit `transactionId` —
+ * safe to call twice for the same purchase (e.g. a client retry after a dropped
+ * response): the second call reports `already` without a double credit.
+ *
+ * @param {object} params
+ * @param {string} params.userId
+ * @param {string} params.transactionId - StoreKit transaction id from the client.
+ * @returns {Promise<{ credits: number, already: boolean }>}
+ * @throws {ApiError} `APPLE_PRODUCT_UNKNOWN` if the verified productId isn't in
+ *   our catalog, `APPLE_TRANSACTION_REVOKED` if Apple refunded/revoked it.
+ */
+export async function verifyAppleCredits({ userId, transactionId }) {
+  const decoded = await apple.fetchVerifiedTransaction(transactionId);
+  if (decoded.revocationDate) throw ApiError.badRequest('APPLE_TRANSACTION_REVOKED');
+
+  const credits = creditsForAppleProduct(decoded.productId);
+  if (!credits) throw ApiError.badRequest('APPLE_PRODUCT_UNKNOWN', { details: { productId: decoded.productId } });
+
+  const paid = typeof decoded.price === 'number' ? decoded.price / 1000 : 0;
+  const currency = decoded.currency || 'USD';
+
+  const out = await callProcedure(
+    'credit_wallet_apple',
+    [userId, decoded.transactionId, credits, paid, currency],
+    ['ok', 'already'],
+  );
+  if (!out.ok) throw ApiError.internal('WALLET_CREDIT_FAILED');
+  if (!out.already) emitToUser(userId, 'tx:credit', { amount: credits, currency });
+  return { credits, already: Boolean(out.already) };
 }
 
 /**

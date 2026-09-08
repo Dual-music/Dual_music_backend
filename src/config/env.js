@@ -84,6 +84,20 @@ const schema = Joi.object({
   STRIPE_PRICE_PRO: Joi.string().allow('').default(''),
   STRIPE_PRICE_PREMIUM: Joi.string().allow('').default(''),
 
+  // Recharge de crédits sur iOS (StoreKit — obligatoire côté Apple, règle 3.1.1) :
+  // issuer id + key id + clé privée .p8 d'une clé API App Store Connect "In-App
+  // Purchase", pour appeler l'App Store Server API et vérifier les transactions
+  // server-to-server. `APPLE_IAP_PRIVATE_KEY` porte le PEM complet, `\n` littéraux
+  // dans la variable d'environnement (remplacés en clé réelle au chargement).
+  APPLE_IAP_ISSUER_ID: Joi.string().allow('').default(''),
+  APPLE_IAP_KEY_ID: Joi.string().allow('').default(''),
+  APPLE_IAP_PRIVATE_KEY: Joi.string().allow('').default(''),
+  APPLE_IAP_BUNDLE_ID: Joi.string().default('com.dualmusic.app'),
+  APPLE_IAP_ENVIRONMENT: Joi.string().valid('sandbox', 'production').default('sandbox'),
+  // Identifiant numérique App Store de l'app — obligatoire en production (mais pas
+  // en sandbox) pour que SignedDataVerifier valide l'app d'origine de la transaction.
+  APPLE_IAP_APP_APPLE_ID: Joi.string().allow('').default(''),
+
   // Pilote de stockage des médias : `s3` (Cloudflare R2 / AWS S3, presign direct)
   // ou `local` (disque du backend, servi via /media). Décision d'infrastructure,
   // fixée au déploiement — voir docs/STORAGE.md.
@@ -226,6 +240,16 @@ export const config = Object.freeze({
     webhookSecret: env.STRIPE_WEBHOOK_SECRET,
     pricePro: env.STRIPE_PRICE_PRO,
     pricePremium: env.STRIPE_PRICE_PREMIUM,
+  },
+
+  appleIAP: {
+    issuerId: env.APPLE_IAP_ISSUER_ID,
+    keyId: env.APPLE_IAP_KEY_ID,
+    // `\n` littéraux (tels qu'on les met dans un .env) → vraies fins de ligne PEM.
+    privateKey: env.APPLE_IAP_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    bundleId: env.APPLE_IAP_BUNDLE_ID,
+    environment: env.APPLE_IAP_ENVIRONMENT,
+    appAppleId: env.APPLE_IAP_APP_APPLE_ID ? Number(env.APPLE_IAP_APP_APPLE_ID) : undefined,
   },
 
   storage: {

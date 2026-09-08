@@ -40,6 +40,15 @@ export const stripeSubscriptionSchema = {
   body: Joi.object({ plan: Joi.string().valid('pro', 'premium').required() }),
 };
 
+/**
+ * POST /payments/apple/verify — only the transaction id: `productId`/`credits`
+ * are NEVER taken from the client, they're re-derived from Apple's own signed
+ * response (see `payments.service.js#verifyAppleCredits`).
+ */
+export const appleVerifySchema = {
+  body: Joi.object({ transactionId: Joi.string().max(120).required() }),
+};
+
 /** GET /payments/transaction?merchantId= */
 export const transactionByMerchantSchema = {
   query: Joi.object({ merchantId: Joi.string().max(120).required() }),
@@ -50,5 +59,6 @@ export default {
   monerooInitSchema,
   stripeCreditsSchema,
   stripeSubscriptionSchema,
+  appleVerifySchema,
   transactionByMerchantSchema,
 };
