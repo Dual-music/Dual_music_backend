@@ -68,6 +68,8 @@ export const MESSAGES = {
   APPLE_TRANSACTION_REVOKED: { fr: 'Cette transaction a été remboursée ou révoquée.', en: 'This transaction was refunded or revoked.' },
   APPLE_PRODUCT_UNKNOWN: { fr: 'Produit Apple inconnu.', en: 'Unknown Apple product.' },
   WALLET_CREDIT_FAILED: { fr: 'Le crédit du portefeuille a échoué.', en: 'Crediting the wallet failed.' },
+  CONCERT_NOT_APPROVED: { fr: "Ce concert n'a pas encore été approuvé.", en: 'This concert has not been approved yet.' },
+  SPONSOR_NOT_ACCEPTED: { fr: "Cet évènement n'accepte pas les demandes de sponsor.", en: 'This event does not accept sponsor requests.' },
 
   // --- Withdrawals & PIN -----------------------------------------------------
   PIN_NOT_SET: { fr: "Aucun code PIN de retrait n'est défini.", en: 'No withdrawal PIN is set.' },
