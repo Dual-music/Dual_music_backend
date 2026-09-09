@@ -16,6 +16,9 @@ vi.mock('../src/services/payments/providers/stripe.client.js', () => ({
   createCreditsCheckout: vi.fn(),
   createSubscriptionCheckout: vi.fn(),
 }));
+vi.mock('../src/services/payments/providers/apple.client.js', () => ({
+  fetchVerifiedTransaction: vi.fn(),
+}));
 vi.mock('../src/utils/procedures.js', () => ({ callProcedure: vi.fn(), default: {} }));
 
 import { db } from '../src/models/index.js';
@@ -23,6 +26,7 @@ import * as payments from '../src/services/payments/payments.service.js';
 import { computeCreditsForRecharge } from '../src/services/payments/pricing.service.js';
 import * as cinetpay from '../src/services/payments/providers/cinetpay.client.js';
 import * as moneroo from '../src/services/payments/providers/moneroo.client.js';
+import * as apple from '../src/services/payments/providers/apple.client.js';
 import * as stripe from '../src/services/payments/providers/stripe.client.js';
 import { callProcedure } from '../src/utils/procedures.js';
 
@@ -447,5 +451,70 @@ describe('computeCreditsForRecharge — config fallbacks', () => {
     expect(q.creditValueUsd).toBe(0.01);
     expect(q.feePct).toBe(0);
     expect(q.credits).toBe(10000);
+  });
+});
+
+describe('verifyAppleCredits', () => {
+  const TX_ID = 'apple_tx_1';
+  const PRODUCT_ID = 'com.dualmusic.app.credits.tier1'; // 99 credits, see appleIAPProducts.js
+
+  it('credits the wallet for a verified, unrevoked transaction with a numeric price', async () => {
+    apple.fetchVerifiedTransaction.mockResolvedValue({
+      transactionId: TX_ID,
+      productId: PRODUCT_ID,
+      price: 990, // milliunits → 0.99
+      currency: 'USD',
+      revocationDate: null,
+    });
+    vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: false });
+    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).resolves.toEqual({
+      credits: 99,
+      already: false,
+    });
+    expect(callProcedure).toHaveBeenCalledWith('credit_wallet_apple', [UID, TX_ID, 99, 0.99, 'USD'], ['ok', 'already']);
+  });
+
+  it('falls back to a 0 paid amount and USD currency when price/currency are absent', async () => {
+    apple.fetchVerifiedTransaction.mockResolvedValue({ transactionId: TX_ID, productId: PRODUCT_ID });
+    vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: false });
+    await payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID });
+    expect(callProcedure).toHaveBeenCalledWith('credit_wallet_apple', [UID, TX_ID, 99, 0, 'USD'], ['ok', 'already']);
+  });
+
+  it('rejects a refunded/revoked transaction without crediting', async () => {
+    apple.fetchVerifiedTransaction.mockResolvedValue({
+      transactionId: TX_ID,
+      productId: PRODUCT_ID,
+      revocationDate: 1700000000000,
+    });
+    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).rejects.toMatchObject({
+      code: 'APPLE_TRANSACTION_REVOKED',
+    });
+    expect(callProcedure).not.toHaveBeenCalled();
+  });
+
+  it('rejects a product id absent from the catalog', async () => {
+    apple.fetchVerifiedTransaction.mockResolvedValue({ transactionId: TX_ID, productId: 'com.unknown.product' });
+    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).rejects.toMatchObject({
+      code: 'APPLE_PRODUCT_UNKNOWN',
+    });
+    expect(callProcedure).not.toHaveBeenCalled();
+  });
+
+  it('reports already:true without a duplicate credit on a replayed transactionId', async () => {
+    apple.fetchVerifiedTransaction.mockResolvedValue({ transactionId: TX_ID, productId: PRODUCT_ID });
+    vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: true });
+    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).resolves.toEqual({
+      credits: 99,
+      already: true,
+    });
+  });
+
+  it('throws when the credit procedure reports failure', async () => {
+    apple.fetchVerifiedTransaction.mockResolvedValue({ transactionId: TX_ID, productId: PRODUCT_ID });
+    vi.mocked(callProcedure).mockResolvedValue({ ok: false });
+    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).rejects.toMatchObject({
+      code: 'WALLET_CREDIT_FAILED',
+    });
   });
 });
