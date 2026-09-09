@@ -86,6 +86,14 @@ export const googleNativeSchema = {
   body: Joi.object({ idToken: Joi.string().min(10).max(8192).required() }),
 };
 
+export const appleNativeSchema = {
+  body: Joi.object({
+    identityToken: Joi.string().min(10).max(8192).required(),
+    // Fourni par le client SEULEMENT si Apple vient de le donner (première autorisation).
+    fullName: Joi.string().max(160).allow('', null),
+  }),
+};
+
 export default {
   registerSchema,
   loginSchema,
@@ -97,4 +105,5 @@ export default {
   changePasswordSchema,
   googleCallbackSchema,
   googleNativeSchema,
+  appleNativeSchema,
 };

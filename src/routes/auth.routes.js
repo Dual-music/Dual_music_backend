@@ -23,6 +23,8 @@ import * as schemas from '../validations/auth.validation.js';
  * | POST | /password/change | Bearer | currentPassword?, newPassword |
  * | GET  | /oauth/google | public | — (returns consent URL) |
  * | GET  | /oauth/google/callback | public | code, state |
+ * | POST | /oauth/google/native | public | idToken |
+ * | POST | /oauth/apple/native | public | identityToken, fullName? |
  *
  * @module routes/auth.routes
  */
@@ -48,5 +50,6 @@ authRouter.post('/password/change', authenticate(), validate(schemas.changePassw
 authRouter.get('/oauth/google', authController.googleStart);
 authRouter.get('/oauth/google/callback', validate(schemas.googleCallbackSchema), authController.googleCallback);
 authRouter.post('/oauth/google/native', validate(schemas.googleNativeSchema), authController.googleNative);
+authRouter.post('/oauth/apple/native', validate(schemas.appleNativeSchema), authController.appleNative);
 
 export default authRouter;

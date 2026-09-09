@@ -1,6 +1,11 @@
 import { config } from '../config/env.js';
 import * as authService from '../services/auth.service.js';
-import { buildGoogleAuthUrl, handleGoogleCallback, handleGoogleIdToken } from '../services/oauth.service.js';
+import {
+  buildGoogleAuthUrl,
+  handleAppleIdentityToken,
+  handleGoogleCallback,
+  handleGoogleIdToken,
+} from '../services/oauth.service.js';
 import { randomToken } from '../utils/crypto.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 
@@ -125,6 +130,12 @@ export async function googleNative(req, res) {
   return sendSuccess(res, result);
 }
 
+/** POST /auth/oauth/apple/native */
+export async function appleNative(req, res) {
+  const result = await handleAppleIdentityToken(req.body.identityToken, req.body.fullName || undefined, reqCtx(req));
+  return sendSuccess(res, result);
+}
+
 export default {
   register,
   login,
@@ -141,4 +152,5 @@ export default {
   googleStart,
   googleCallback,
   googleNative,
+  appleNative,
 };

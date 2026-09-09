@@ -56,6 +56,11 @@ const schema = Joi.object({
   // séparées par des virgules. Le GOOGLE_CLIENT_ID est déjà inclus automatiquement.
   GOOGLE_ALLOWED_AUDIENCES: Joi.string().allow('').default(''),
 
+  // Sign in with Apple (natif iOS, ASAuthorizationController) : l'audience attendue du
+  // JWT `identityToken` est le bundle identifier de l'app — PAS un "Services ID" (celui-ci
+  // ne sert qu'au flux web "Sign in with Apple for websites", non utilisé ici).
+  APPLE_SIGNIN_BUNDLE_ID: Joi.string().default('com.dualmusic.app'),
+
   LIVEKIT_URL: Joi.string().allow('').default(''),
   LIVEKIT_API_KEY: Joi.string().allow('').default(''),
   LIVEKIT_API_SECRET: Joi.string().allow('').default(''),
@@ -211,6 +216,8 @@ export const config = Object.freeze({
       .map((s) => s.trim())
       .filter(Boolean),
   },
+
+  appleSignIn: { bundleId: env.APPLE_SIGNIN_BUNDLE_ID },
 
   livekit: {
     url: env.LIVEKIT_URL,

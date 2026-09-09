@@ -45,6 +45,7 @@
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",
     "joi": "^17.13.3",
+    "jose": "^6.2.12",
     "jsonwebtoken": "^9.0.2",
     "livekit-server-sdk": "^2.9.0",
     "mysql2": "^3.11.5",

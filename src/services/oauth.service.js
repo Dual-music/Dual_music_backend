@@ -1,3 +1,5 @@
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+
 import { config } from '../config/env.js';
 import { db } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -6,12 +8,16 @@ import { provisionUserRecords, serializeUser } from './auth.service.js';
 import { issueTokens } from './token.service.js';
 
 /**
- * @file Google OAuth 2.0 (Authorization Code) service.
+ * @file Google OAuth 2.0 (Authorization Code) + Sign in with Apple (native) service.
  *
- * Reproduces the frontend's Google sign-in. `buildGoogleAuthUrl` returns the
+ * Google: reproduces the frontend's sign-in. `buildGoogleAuthUrl` returns the
  * consent URL; `handleGoogleCallback` exchanges the code, resolves/links the
  * user (by linked OAuth account, then by email, else provisions a new verified
  * account), and issues our own JWT pair. Uses the global `fetch` (Node 20).
+ *
+ * Apple: `handleAppleIdentityToken` mirrors the exact same resolve/link/provision
+ * shape for the JWT `identityToken` a native `ASAuthorizationController` flow
+ * hands the iOS app — see its own doc comment below for what's different.
  *
  * @module services/oauth.service
  */
@@ -168,4 +174,82 @@ export async function handleGoogleIdToken(idToken, ctx = {}) {
   return { user: serializeUser(user), ...tokens };
 }
 
-export default { buildGoogleAuthUrl, handleGoogleCallback, handleGoogleIdToken };
+// Clés publiques Apple (JWKS), récupérées et mises en cache par `jose` (rotation gérée
+// automatiquement — Apple change ces clés occasionnellement, sans préavis).
+const APPLE_JWKS = createRemoteJWKSet(new URL('https://appleid.apple.com/auth/keys'));
+
+/**
+ * Vérifie un `identityToken` Sign in with Apple (JWT RS256 signé par Apple, fourni par
+ * `ASAuthorizationController` côté iOS natif).
+ *
+ * Contrôles (délégués à `jose`, qui vérifie aussi la signature contre les clés JWKS
+ * d'Apple par `kid`) : émetteur `https://appleid.apple.com`, audience = bundle identifier
+ * de l'app (**pas** un Services ID — celui-ci est réservé au flux web).
+ *
+ * @param {string} identityToken
+ * @returns {Promise<{ sub: string, email?: string }>}
+ */
+async function verifyAppleIdentityToken(identityToken) {
+  if (!config.appleSignIn.bundleId) throw ApiError.internal('OAUTH_NOT_CONFIGURED');
+  let payload;
+  try {
+    ({ payload } = await jwtVerify(identityToken, APPLE_JWKS, {
+      issuer: 'https://appleid.apple.com',
+      audience: config.appleSignIn.bundleId,
+    }));
+  } catch {
+    throw ApiError.unauthorized('INVALID_TOKEN');
+  }
+  const email = typeof payload.email === 'string' ? payload.email : undefined;
+  return { sub: payload.sub, email };
+}
+
+/**
+ * Connexion Apple **native** : vérifie l'identity token, résout/lie/provisionne le compte
+ * (même logique que Google), puis émet notre paire de JWT.
+ *
+ * Deux différences avec Google :
+ * - `fullName` n'est **jamais** dans le JWT — Apple ne le fournit qu'à la toute première
+ *   autorisation, côté client (`ASAuthorizationAppleIDCredential.fullName`), donc l'app
+ *   iOS le transmet séparément (`undefined` la plupart du temps, aux connexions suivantes).
+ * - L'email peut être un relais privé Apple (`@privaterelay.appleid.com`, option « Masquer
+ *   mon e-mail ») — traité comme n'importe quel email normal (accepté tel quel).
+ *
+ * @param {string} identityToken - Identity token signé par Apple.
+ * @param {string} [fullName] - Nom complet, seulement si Apple vient de le fournir.
+ * @param {object} [ctx] - Contexte de requête (IP/UA) pour l'émission des tokens.
+ * @returns {Promise<{ user: object, accessToken: string, refreshToken: string }>}
+ */
+export async function handleAppleIdentityToken(identityToken, fullName, ctx = {}) {
+  const profile = await verifyAppleIdentityToken(identityToken);
+  const email = profile.email?.trim().toLowerCase();
+
+  const user = await db.sequelize.transaction(async (tx) => {
+    const link = await db.OAuthAccount.findOne({
+      where: { provider: 'apple', provider_account_id: profile.sub },
+      transaction: tx,
+    });
+    if (link) return db.User.findByPk(link.user_id, { transaction: tx });
+
+    let account = email ? await db.User.findOne({ where: { email }, transaction: tx }) : null;
+    if (!account) {
+      // Email manquant : cas rarissime en pratique (Apple le fournit systématiquement tant
+      // que le scope `email` est demandé), mais on ne doit jamais planter dessus — repli
+      // sur un placeholder dérivé du `sub`, non vérifié, à corriger depuis le profil.
+      const resolvedEmail = email || `apple.${profile.sub}@privaterelay.local`;
+      account = await db.User.create({ email: resolvedEmail, email_verified: Boolean(email) }, { transaction: tx });
+      await provisionUserRecords(tx, account, { fullName, countryCode: 'FR' });
+    }
+    await db.OAuthAccount.create(
+      { user_id: account.id, provider: 'apple', provider_account_id: profile.sub },
+      { transaction: tx },
+    );
+    return account;
+  });
+
+  if (user.is_banned) throw ApiError.forbidden('ACCOUNT_BANNED');
+  const tokens = await issueTokens(user, ctx);
+  return { user: serializeUser(user), ...tokens };
+}
+
+export default { buildGoogleAuthUrl, handleGoogleCallback, handleGoogleIdToken, handleAppleIdentityToken };
