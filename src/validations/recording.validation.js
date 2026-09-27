@@ -10,10 +10,22 @@ const target = Joi.object({
   sourceId: Joi.string().uuid().required(),
 });
 
-/** POST /recordings/start · /recordings/stop */
+/** POST /recordings/start · /stop · /pause · /resume · /cancel */
 export const startStop = { body: target };
 
 /** GET /recordings/status */
 export const statusQuery = { query: target };
 
-export default { startStop, statusQuery };
+/**
+ * GET /recordings/live/:liveId/guests — appelée par la page « vue enregistrement » headless
+ * (pas d'auth utilisateur), protégée par `key` (voir `recording.service.js#liveRecordingKey`).
+ */
+export const liveGuestsQuery = {
+  params: Joi.object({ liveId: Joi.string().uuid().required() }),
+  query: Joi.object({
+    recordingId: Joi.string().uuid().required(),
+    key: Joi.string().length(32).required(),
+  }),
+};
+
+export default { startStop, statusQuery, liveGuestsQuery };

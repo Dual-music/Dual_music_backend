@@ -29,15 +29,29 @@ moderationRouter.get('/reports/account/aggregate', authenticate(), requireRole('
 moderationRouter.get('/reports/:kind', authenticate(), requireRole('moderator', 'admin'), validate(v.listReports), moderationController.listReports);
 moderationRouter.patch('/reports/:kind/:id', authenticate(), requireRole('moderator', 'admin'), validate(v.reviewReport), moderationController.reviewReport);
 
-// --- Stream bans (event owners + moderators/admins) --------------------------
+// --- Stream bans (event host, its appointed moderators, or platform moderators/admins) -------
+// Pas de `requireRole` ici : depuis l'ajout des modérateurs désignés (voir moderation.service.js
+// #canModerateEvent), l'autorisation n'est plus un rôle global (un simple fan nommé modérateur
+// d'un live doit pouvoir bannir) — elle est vérifiée par évènement, côté service.
 moderationRouter.get('/stream-bans', authenticate(), validate(v.streamBanQuery), moderationController.listStreamBans);
-moderationRouter.post('/stream-bans', authenticate(), requireRole('artist', 'manager', 'moderator', 'admin'), validate(v.createStreamBan), moderationController.banStream);
-moderationRouter.delete('/stream-bans/:id', authenticate(), requireRole('artist', 'manager', 'moderator', 'admin'), validate(v.idParam), moderationController.liftStreamBan);
+moderationRouter.post('/stream-bans', authenticate(), validate(v.createStreamBan), moderationController.banStream);
+moderationRouter.delete('/stream-bans/:id', authenticate(), validate(v.idParam), moderationController.liftStreamBan);
 
-// --- Competition bans (manager/admin) ----------------------------------------
-moderationRouter.get('/competition-bans', authenticate(), requireRole('admin'), validate(v.competitionBanQuery), moderationController.listCompetitionBans);
-moderationRouter.post('/competition-bans', authenticate(), requireRole('manager', 'moderator', 'admin'), validate(v.createCompetitionBan), moderationController.banCompetition);
-moderationRouter.delete('/competition-bans/:id', authenticate(), requireRole('manager', 'moderator', 'admin'), validate(v.idParam), moderationController.liftCompetitionBan);
+// --- Competition bans (competition host, its appointed moderators, or platform moderators/admins) --
+// GET ouvert à tout utilisateur authentifié (comme /stream-bans) : un spectateur/candidat doit
+// pouvoir vérifier SON PROPRE statut de bannissement (useStreamBan côté web) — restreindre à
+// `admin` empêchait quiconque d'autre de charger la liste, `isCurrentUserBanned` restait donc
+// toujours faux pour les managers/spectateurs/candidats (bug constaté en développant le
+// bannissement des candidats).
+moderationRouter.get('/competition-bans', authenticate(), validate(v.competitionBanQuery), moderationController.listCompetitionBans);
+moderationRouter.post('/competition-bans', authenticate(), validate(v.createCompetitionBan), moderationController.banCompetition);
+moderationRouter.delete('/competition-bans/:id', authenticate(), validate(v.idParam), moderationController.liftCompetitionBan);
+
+// --- Event moderators (host-appointed, up to 2 per event) --------------------
+moderationRouter.get('/events/:type/:id/viewers', authenticate(), validate(v.eventParam), moderationController.listCurrentViewers);
+moderationRouter.get('/events/:type/:id/moderators', authenticate(), validate(v.eventParam), moderationController.listEventModerators);
+moderationRouter.post('/events/:type/:id/moderators', authenticate(), validate(v.appointModerator), moderationController.appointModerator);
+moderationRouter.delete('/events/:type/:id/moderators/:userId', authenticate(), validate(v.revokeModerator), moderationController.revokeModerator);
 
 // --- Platform bans (admin only) ----------------------------------------------
 moderationRouter.get('/platform-bans', authenticate(), requireRole('admin'), moderationController.listPlatformBans);

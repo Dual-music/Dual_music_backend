@@ -39,6 +39,9 @@ export const PUBLIC_SETTING_KEYS = Object.freeze([
   'recording_config',
   'live_report_config',
   'account_report_config',
+  // URL du son joué à l'annonce du vainqueur (duel/concert/compétition), téléversable et
+  // remplaçable à tout moment par l'admin — `null` = repli sur le son par défaut côté client.
+  'winner_sound_url',
 ]);
 
 const PUBLIC_KEY_SET = new Set(PUBLIC_SETTING_KEYS);

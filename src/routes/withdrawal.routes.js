@@ -15,6 +15,9 @@ import * as v from '../validations/withdrawal.validation.js';
  * (refund) / complete. Every route requires authentication; admin routes add
  * `requireRole('admin')`.
  *
+ * `POST /:id/payout` émet le transfert CinetPay : la demande passe en
+ * `processing` et n'est clôturée que par le webhook du provider.
+ *
  * @module routes/withdrawal.routes
  */
 
@@ -47,5 +50,12 @@ withdrawalRouter.post('/', validate(v.requestWithdrawal), idempotency(), withdra
 withdrawalRouter.post('/:id/approve', requireRole('admin'), validate(v.idParam), withdrawalController.approve);
 withdrawalRouter.post('/:id/reject', requireRole('admin'), validate(v.idParam), withdrawalController.reject);
 withdrawalRouter.post('/:id/complete', requireRole('admin'), validate(v.complete), withdrawalController.complete);
+
+// --- Versement automatisé (CinetPay) -----------------------------------------
+// Pas de `requireRole` ici : le propriétaire peut déclencher son propre versement
+// quand la demande est en mode automatique. L'autorisation fine est dans le
+// service, qui seul connaît `auto_processed`. `idempotency()` empêche qu'un
+// double envoi réseau émette deux ordres de transfert.
+withdrawalRouter.post('/:id/payout', validate(v.idParam), idempotency(), withdrawalController.payout);
 
 export default withdrawalRouter;

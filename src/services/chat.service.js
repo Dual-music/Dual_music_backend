@@ -5,7 +5,24 @@ import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
 import { sanitizeText } from '../utils/sanitize.js';
 
+import { canModerateEvent } from './moderation.service.js';
 import { getDisplayProfiles } from './user.service.js';
+
+/**
+ * Is `userId` banned from this event? `competition` uses its own dedicated
+ * `competition_bans` table; the other 3 event types share `stream_bans`
+ * (distinguished by `stream_type`).
+ * @param {'duel'|'concert'|'competition'|'live'} kind
+ * @param {string} eventId
+ * @param {string} userId
+ * @returns {Promise<boolean>}
+ */
+async function isBannedFromEvent(kind, eventId, userId) {
+  if (kind === 'competition') {
+    return (await db.CompetitionBan.count({ where: { competition_id: eventId, banned_user_id: userId } })) > 0;
+  }
+  return (await db.StreamBan.count({ where: { stream_type: kind, stream_id: eventId, banned_user_id: userId } })) > 0;
+}
 
 /**
  * @file Generic event-chat service.
@@ -51,14 +68,23 @@ export async function listMessages({ model, fk }, eventId, query) {
  * @param {import('sequelize').ModelStatic<any>} cfg.model
  * @param {string} cfg.fk
  * @param {boolean} [cfg.threaded=true] - Whether `parent_id` is supported.
+ * @param {import('sequelize').ModelStatic<any>} [cfg.eventModel] - Used to check `chat_enabled`.
  * @param {object} input
  * @param {string} input.eventId
  * @param {string} input.userId
  * @param {string} input.message
  * @param {string|null} [input.parentId]
  * @returns {Promise<object>} The created message with its author.
+ * @throws {ApiError} 403 when the host has disabled chat, or the author is banned from this event.
  */
-export async function postMessage({ model, fk, threaded = true, kind }, { eventId, userId, message, parentId = null }) {
+export async function postMessage({ model, fk, threaded = true, kind, eventModel }, { eventId, userId, message, parentId = null }) {
+  if (eventModel) {
+    const event = await eventModel.findByPk(eventId, { attributes: ['chat_enabled'], raw: true }).catch(() => null);
+    // `raw` boolean comes back as 0/1 on SQLite (unlike MySQL) — compare truthiness, not `=== false`.
+    if (event && !event.chat_enabled) throw ApiError.forbidden('CHAT_DISABLED');
+  }
+  if (kind && (await isBannedFromEvent(kind, eventId, userId))) throw ApiError.forbidden('FORBIDDEN');
+
   const payload = { [fk]: eventId, user_id: userId, message: sanitizeText(message) };
   if (threaded && parentId) payload.parent_id = parentId;
   const created = await model.create(payload);
@@ -72,28 +98,33 @@ export async function postMessage({ model, fk, threaded = true, kind }, { eventI
 }
 
 /**
- * Soft-moderates (hides) a message. Author or moderators/admins only.
+ * Soft-moderates (hides) a message. The author, this event's host/appointed
+ * moderator (see `moderation.service.js#canModerateEvent`), or a platform
+ * admin/moderator may do this.
  * @param {object} cfg
  * @param {import('sequelize').ModelStatic<any>} cfg.model
+ * @param {string} cfg.fk
+ * @param {'duel'|'concert'|'competition'|'live'} cfg.kind
  * @param {string} messageId
  * @param {{ id: string }} actor
  * @param {string[]} actorRoles
  * @returns {Promise<void>}
  */
-export async function moderateMessage({ model }, messageId, actor, actorRoles) {
+export async function moderateMessage({ model, fk, kind }, messageId, actor, actorRoles) {
   const msg = await model.findByPk(messageId);
   if (!msg) throw ApiError.notFound('NOT_FOUND');
-  if (!canModerate(actor, actorRoles, msg.user_id)) throw ApiError.forbidden('FORBIDDEN');
+  const ok = canModerate(actor, actorRoles, msg.user_id) || (kind && (await canModerateEvent(kind, msg[fk], actor, actorRoles)));
+  if (!ok) throw ApiError.forbidden('FORBIDDEN');
   msg.is_moderated = true;
   await msg.save();
 }
 
-/** Chat model bindings per event type. */
+/** Chat model bindings per event type. `eventModel` backs the `chat_enabled` gate. */
 export const CHAT_BINDINGS = {
-  duel: { model: db.DuelChatMessage, fk: 'duel_id', threaded: true, kind: 'duel' },
-  concert: { model: db.ConcertChatMessage, fk: 'concert_id', threaded: true, kind: 'concert' },
-  competition: { model: db.CompetitionChatMessage, fk: 'competition_id', threaded: true, kind: 'competition' },
-  live: { model: db.LiveChatMessage, fk: 'live_id', threaded: false, kind: 'live' },
+  duel: { model: db.DuelChatMessage, fk: 'duel_id', threaded: true, kind: 'duel', eventModel: db.Duel },
+  concert: { model: db.ConcertChatMessage, fk: 'concert_id', threaded: true, kind: 'concert', eventModel: db.ArtistConcert },
+  competition: { model: db.CompetitionChatMessage, fk: 'competition_id', threaded: true, kind: 'competition', eventModel: db.Competition },
+  live: { model: db.LiveChatMessage, fk: 'live_id', threaded: true, kind: 'live', eventModel: db.ArtistLive },
 };
 
 export default { listMessages, postMessage, moderateMessage, CHAT_BINDINGS };

@@ -488,9 +488,8 @@ const GIFT_ENGAGEMENT_LIMIT = 20;
  *  - **competition**: `competition_gifts.credits` (by `sender_id`) +
  *    `competition_votes.credits_spent` (by `voter_id`), keyed on `competition_id`.
  *  - **live**: `gift_transactions` gift value (by `from_user_id`), keyed on `live_id`.
- *  - **concert**: `concert_dedications.price_credits` (by `fan_id`), keyed on
- *    `concert_id`. `gift_transactions` has no `concert_id` column, so dedications
- *    are the only concert-attributable spend.
+ *  - **concert**: `gift_transactions` gift value (by `from_user_id`) + `concert_dedications`
+ *    (by `fan_id`), both keyed on `concert_id`.
  */
 const GIFT_ENGAGEMENT_SQL = {
   duel: `
@@ -515,9 +514,14 @@ const GIFT_ENGAGEMENT_SQL = {
      WHERE gt.live_id = :ctx
      GROUP BY gt.from_user_id ORDER BY total DESC LIMIT :limit`,
   concert: `
-    SELECT fan_id AS user_id, ROUND(SUM(price_credits), 2) AS total
-      FROM concert_dedications WHERE concert_id = :ctx
-     GROUP BY fan_id ORDER BY total DESC LIMIT :limit`,
+    SELECT uid AS user_id, ROUND(SUM(amt), 2) AS total FROM (
+      SELECT gt.from_user_id AS uid, COALESCE(vg.price, 0) AS amt
+        FROM gift_transactions gt LEFT JOIN virtual_gifts vg ON vg.id = gt.gift_id
+       WHERE gt.concert_id = :ctx
+      UNION ALL
+      SELECT fan_id AS uid, price_credits AS amt FROM concert_dedications WHERE concert_id = :ctx
+    ) x
+    GROUP BY uid ORDER BY total DESC LIMIT :limit`,
 };
 
 /**

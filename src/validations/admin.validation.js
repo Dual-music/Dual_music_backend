@@ -62,6 +62,8 @@ export const approveDuelRequest = {
     scheduledDate: Joi.date().iso().allow(null),
     ticketPrice: Joi.number().min(0),
     allowsSponsorAds: Joi.boolean(),
+    acceptsSponsors: Joi.boolean(),
+    sponsorSubmissionDeadline: Joi.date().iso().allow(null),
   }),
 };
 export const rejectDuelRequest = { params: Joi.object({ id: uuid.required() }) };

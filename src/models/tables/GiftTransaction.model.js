@@ -13,6 +13,7 @@ export default function defineGiftTransaction(sequelize) {
   return sequelize.define(
     'GiftTransaction',
     {
+    concert_id: { type: DataTypes.UUID, allowNull: true },
     created_at: { type: DataTypes.DATE, allowNull: true, defaultValue: DataTypes.NOW },
     duel_id: { type: DataTypes.UUID, allowNull: true },
     from_user_id: { type: DataTypes.UUID, allowNull: false },

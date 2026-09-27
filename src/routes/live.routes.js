@@ -25,7 +25,19 @@ const startSchema = {
     title: Joi.string().max(200).allow('', null),
     roomId: Joi.string().max(120).allow(null),
     streamUrl: Joi.string().uri().max(2048).allow(null),
+    allowsDedications: Joi.boolean(),
+    dedicationMinPriceCredits: Joi.number().positive().allow(null),
+    allowGuests: Joi.boolean(),
   }),
+};
+const updateSettingsSchema = {
+  params: Joi.object({ id: uuid.required() }),
+  body: Joi.object({
+    allowsDedications: Joi.boolean(),
+    dedicationMinPriceCredits: Joi.number().positive().allow(null),
+    allowGuests: Joi.boolean(),
+    chatEnabled: Joi.boolean(),
+  }).min(1),
 };
 const respondJoinSchema = {
   params: Joi.object({ id: uuid.required() }),
@@ -48,6 +60,7 @@ liveRouter.delete('/join-requests/:id', authenticate(), validate(idParam), liveC
 liveRouter.get('/:id', optionalAuth(), validate(idParam), liveController.getOne);
 liveRouter.get('/:id/reports/summary', optionalAuth(), validate(idParam), liveController.reportSummary);
 liveRouter.patch('/:id', authenticate(), validate(updateStatusSchema), liveController.updateStatus);
+liveRouter.patch('/:id/settings', authenticate(), validate(updateSettingsSchema), liveController.updateSettings);
 liveRouter.post('/:id/end', authenticate(), validate(idParam), liveController.end);
 liveRouter.get('/:id/likes', validate(idParam), liveController.likes);
 liveRouter.post('/:id/likes', optionalAuth(), validate(idParam), liveController.like);

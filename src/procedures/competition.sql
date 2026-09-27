@@ -113,3 +113,40 @@ proc: BEGIN
   COMMIT;
   SET p_success = TRUE; SET p_code = 'ok'; SET p_ticket = v_id;
 END;
+-- @sep
+DROP PROCEDURE IF EXISTS refund_competition_candidate_entry_fee;
+-- @sep
+-- refund_competition_candidate_entry_fee — credits back a candidate's entry fee when the
+-- manager removes them after approval. Idempotent (no-op, not an error) when nothing was
+-- actually collected (`entry_fee_paid = 0`) or already refunded.
+CREATE PROCEDURE refund_competition_candidate_entry_fee(
+  IN  p_candidate CHAR(36),
+  OUT p_success   BOOLEAN,
+  OUT p_code      VARCHAR(40)
+)
+proc: BEGIN
+  DECLARE v_artist  CHAR(36);
+  DECLARE v_amount  DECIMAL(18,2);
+  DECLARE v_paid    BOOLEAN;
+  DECLARE v_refunded DATETIME;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK; RESIGNAL; END;
+  SET p_success = FALSE; SET p_code = 'error';
+
+  START TRANSACTION;
+  SELECT artist_id, entry_fee_amount, entry_fee_paid, refunded_at
+    INTO v_artist, v_amount, v_paid, v_refunded
+    FROM competition_candidates WHERE id = p_candidate FOR UPDATE;
+
+  IF v_artist IS NULL THEN SET p_code = 'not_found'; ROLLBACK; LEAVE proc; END IF;
+  IF v_refunded IS NOT NULL THEN SET p_success = TRUE; SET p_code = 'already_refunded'; COMMIT; LEAVE proc; END IF;
+  IF v_paid = 0 OR v_amount IS NULL OR v_amount <= 0 THEN
+    SET p_success = TRUE; SET p_code = 'nothing_to_refund'; COMMIT; LEAVE proc;
+  END IF;
+
+  INSERT INTO user_wallets (user_id, balance, updated_at) VALUES (v_artist, v_amount, UTC_TIMESTAMP())
+    ON DUPLICATE KEY UPDATE balance = balance + v_amount, updated_at = UTC_TIMESTAMP();
+  UPDATE competition_candidates SET refunded_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() WHERE id = p_candidate;
+
+  COMMIT;
+  SET p_success = TRUE; SET p_code = 'ok';
+END;

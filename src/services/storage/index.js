@@ -24,6 +24,7 @@ import { s3Driver } from './s3.driver.js';
  * @property {(key: string, start: number, end: number) => Promise<Buffer>} getRange
  * @property {(key: string) => Promise<Buffer>} getFull
  * @property {(key: string) => Promise<void>} delete
+ * @property {(key: string, body: Buffer, contentType?: string) => Promise<void>} putObject
  * @property {(key: string) => string} publicUrl
  * @property {() => string} publicBaseUrl
  */

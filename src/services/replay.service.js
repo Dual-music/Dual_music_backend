@@ -21,19 +21,58 @@ import { getDisplayProfiles } from './user.service.js';
  */
 
 /** source_type → the event FK column it populates. */
-const SOURCE_FK = { duel: 'duel_id', concert: 'concert_id', competition: 'competition_id' };
+// `live` était absent : un replay issu d'un LIVE (`recording.service.js#concatenateSession`)
+// n'avait aucune colonne où stocker l'id d'origine → `createReplay` échouait systématiquement
+// avec VALIDATION_ERROR pour ce type (avalé en `status:'failed'`, aucun replay de live n'était
+// donc jamais réellement créé).
+const SOURCE_FK = { duel: 'duel_id', concert: 'concert_id', competition: 'competition_id', live: 'live_id' };
 
 /**
- * Computes whether a user may watch a replay.
+ * MySQL/mysql2 returns TINYINT(1) BOOLEAN columns as raw `0`/`1` numbers on `raw: true`
+ * queries. Strictly-typed JSON decoders (the Android app's kotlinx.serialization `Boolean`
+ * fields) reject a JSON `1`/`0` for a boolean field outright — the whole row fails to parse,
+ * which can silently empty an entire list client-side. Coerce to real booleans before sending
+ * (same fix already applied to lives — see `live.service.js#castLiveBooleans`).
+ */
+function castReplayBooleans(row) {
+  return { ...row, is_public: !!row.is_public, is_premium: !!row.is_premium };
+}
+
+/**
+ * Computes whether a user may watch a replay: free if not premium, free for the
+ * owner/artist, free for a paid `replay_access` row, AND free for anyone who actually
+ * attended the source event live (`stream_attendance` — see {@link attendedSource}), as
+ * requested: a paid replay stays free for whoever watched the direct, and only charges
+ * those who missed it.
  * @param {object} replay
  * @param {string|null} userId
  * @param {object|null} accessRow - A `replay_access` row, if any.
+ * @param {boolean} attended - Whether `userId` is in `stream_attendance` for this replay's source event.
  * @returns {boolean}
  */
-function computeAccess(replay, userId, accessRow) {
+function computeAccess(replay, userId, accessRow, attended = false) {
   if (!replay.is_premium) return true;
   if (userId && (replay.created_by === userId || replay.artist_id === userId)) return true;
-  return Boolean(accessRow);
+  return Boolean(accessRow) || attended;
+}
+
+/**
+ * Whether `userId` is recorded as having attended the LIVE run of this replay's source event
+ * (`stream_attendance`, populated at Socket.IO join time — see `realtime/index.js`).
+ * @param {object} replay - Raw `replay_videos` row (needs `source_type` + its FK column).
+ * @param {string|null} userId
+ * @returns {Promise<boolean>}
+ */
+async function attendedSource(replay, userId) {
+  if (!userId) return false;
+  const fk = SOURCE_FK[replay.source_type];
+  const eventId = fk ? replay[fk] : null;
+  if (!eventId) return false;
+  const row = await db.StreamAttendance.findOne({
+    where: { user_id: userId, event_type: replay.source_type, event_id: eventId },
+    raw: true,
+  });
+  return Boolean(row);
 }
 
 /**
@@ -48,20 +87,33 @@ export async function listReplays(query, viewerId = null) {
   if (query.duelId) where.duel_id = query.duelId;
   if (query.competitionId) where.competition_id = query.competitionId;
   if (query.concertId) where.concert_id = query.concertId;
+  if (query.liveId) where.live_id = query.liveId;
   // Comma-separated id lists (batch): `duelIds=a,b`, `competitionIds=a,b`.
   if (query.duelIds) where.duel_id = { [Op.in]: String(query.duelIds).split(',').filter(Boolean) };
   if (query.competitionIds) where.competition_id = { [Op.in]: String(query.competitionIds).split(',').filter(Boolean) };
   if (query.isPublic === 'true') where.is_public = true;
   if (query.isPublic === 'false') where.is_public = false;
-  // `mine=true`: replays the caller authored OR performed in.
+  // `mine=true`: replays the caller authored OR performed in. A duel replay only carries ONE
+  // `artist_id` (the recording is started with `artist1_id`, see `duel.service.js`), so the
+  // SECOND participant never matched `created_by`/`artist_id` and could never see their own
+  // duel's replay here — closed by also matching on duels where the caller is either combatant.
   if (query.mine === 'true' && viewerId) {
-    where[Op.or] = [{ created_by: viewerId }, { artist_id: viewerId }];
+    const myDuelIds = await db.Duel.findAll({
+      where: { [Op.or]: [{ artist1_id: viewerId }, { artist2_id: viewerId }] },
+      attributes: ['id'],
+      raw: true,
+    }).then((rows) => rows.map((r) => r.id));
+    where[Op.or] = [
+      { created_by: viewerId },
+      { artist_id: viewerId },
+      ...(myDuelIds.length ? [{ duel_id: { [Op.in]: myDuelIds } }] : []),
+    ];
   }
   const rows = await db.ReplayVideo.findAll({ where, order, limit, offset, raw: true });
 
   const artists = await getDisplayProfiles(rows.map((r) => r.artist_id).filter(Boolean));
   const byId = new Map(artists.map((p) => [p.id, p]));
-  const hydrated = rows.map((r) => ({ ...r, artist: byId.get(r.artist_id) ?? null }));
+  const hydrated = rows.map((r) => ({ ...castReplayBooleans(r), artist: byId.get(r.artist_id) ?? null }));
   return { rows: hydrated, pagination: buildPaginationMeta({ mode, rows, limit, page: query.page }) };
 }
 
@@ -80,12 +132,16 @@ export async function getReplay(id, userId = null) {
   const likes = await db.ReplayLike.count({ where: { replay_id: id } });
   let accessRow = null;
   let liked = false;
+  let attended = false;
   if (userId) {
-    accessRow = await db.ReplayAccess.findOne({ where: { replay_id: id, user_id: userId }, raw: true });
-    liked = Boolean(await db.ReplayLike.findOne({ where: { replay_id: id, user_id: userId } }));
+    [accessRow, liked, attended] = await Promise.all([
+      db.ReplayAccess.findOne({ where: { replay_id: id, user_id: userId }, raw: true }),
+      db.ReplayLike.findOne({ where: { replay_id: id, user_id: userId } }).then(Boolean),
+      attendedSource(replay, userId),
+    ]);
   }
   const [artist] = await getDisplayProfiles([replay.artist_id]);
-  return { ...replay, artist: artist ?? null, likes, hasAccess: computeAccess(replay, userId, accessRow), liked };
+  return { ...castReplayBooleans(replay), artist: artist ?? null, likes, hasAccess: computeAccess(replay, userId, accessRow, attended), liked };
 }
 
 /**
@@ -137,7 +193,7 @@ async function assertCanEdit(id, userId, roles) {
  */
 export async function updateReplay(id, userId, roles, patch) {
   const replay = await assertCanEdit(id, userId, roles);
-  for (const k of ['title', 'description', 'thumbnail_url', 'is_public', 'is_premium', 'replay_price']) {
+  for (const k of ['title', 'description', 'thumbnail_url', 'video_url', 'is_public', 'is_premium', 'replay_price']) {
     if (patch[k] !== undefined) replay[k] = patch[k];
   }
   await replay.save();
@@ -201,10 +257,13 @@ export async function toggleLike(userId, id) {
 export async function checkAccess(id, userId) {
   const replay = await db.ReplayVideo.findByPk(id, { raw: true });
   if (!replay) throw ApiError.notFound('NOT_FOUND');
-  const accessRow = userId
-    ? await db.ReplayAccess.findOne({ where: { replay_id: id, user_id: userId }, raw: true })
-    : null;
-  return { hasAccess: computeAccess(replay, userId, accessRow) };
+  const [accessRow, attended] = userId
+    ? await Promise.all([
+        db.ReplayAccess.findOne({ where: { replay_id: id, user_id: userId }, raw: true }),
+        attendedSource(replay, userId),
+      ])
+    : [null, false];
+  return { hasAccess: computeAccess(replay, userId, accessRow, attended) };
 }
 
 export default {

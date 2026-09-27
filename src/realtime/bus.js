@@ -51,4 +51,37 @@ export function emitToUser(userId, event, payload) {
   io?.of('/notifications').to(`user:${userId}`).emit(event, payload);
 }
 
-export default { setIo, roomName, emitToRoom, emitToUser };
+/**
+ * Current member count of a room (authoritative Socket.IO adapter count — same
+ * value clients see via `presence`), 0 if realtime isn't attached or nobody's in it.
+ * @param {string} namespace - e.g. '/live'.
+ * @param {string} room
+ * @returns {number}
+ */
+export function getRoomSize(namespace, room) {
+  return io?.of(namespace).adapter.rooms.get(room)?.size ?? 0;
+}
+
+/**
+ * Distinct authenticated user ids currently connected to a room (for a host's
+ * "pick a moderator from current viewers" picker). Cross-references the
+ * adapter's socket-id set with each socket's `userId` (attached by the
+ * namespace auth middleware) — sockets with no `userId` (anonymous) are
+ * excluded. `[]` if realtime isn't attached or nobody (authenticated) is in it.
+ * @param {string} namespace - e.g. '/live'.
+ * @param {string} room
+ * @returns {string[]}
+ */
+export function getRoomUserIds(namespace, room) {
+  const nsp = io?.of(namespace);
+  const socketIds = nsp?.adapter.rooms.get(room);
+  if (!socketIds) return [];
+  const ids = new Set();
+  for (const socketId of socketIds) {
+    const userId = nsp.sockets.get(socketId)?.userId;
+    if (userId) ids.add(userId);
+  }
+  return [...ids];
+}
+
+export default { setIo, roomName, emitToRoom, emitToUser, getRoomSize, getRoomUserIds };

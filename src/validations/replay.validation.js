@@ -11,11 +11,12 @@ export const idParam = { params: Joi.object({ id: uuid.required() }) };
 
 export const listQuery = {
   query: Joi.object({
-    sourceType: Joi.string().valid('duel', 'concert', 'competition'),
+    sourceType: Joi.string().valid('duel', 'concert', 'competition', 'live'),
     artistId: uuid,
     duelId: uuid,
     competitionId: uuid,
     concertId: uuid,
+    liveId: uuid,
     duelIds: Joi.string().max(4000),
     competitionIds: Joi.string().max(4000),
     mine: Joi.string().valid('true'),
@@ -29,7 +30,7 @@ export const listQuery = {
 
 export const create = {
   body: Joi.object({
-    sourceType: Joi.string().valid('duel', 'concert', 'competition').required(),
+    sourceType: Joi.string().valid('duel', 'concert', 'competition', 'live').required(),
     eventId: uuid.required(),
     artistId: uuid,
     title: Joi.string().min(1).max(200).required(),
@@ -50,6 +51,9 @@ export const update = {
     title: Joi.string().min(1).max(200),
     description: Joi.string().max(2000).allow('', null),
     thumbnail_url: Joi.string().uri().max(2048).allow('', null),
+    // Remplacement du fichier vidéo (téléversement d'un remplacement) — passe par le flux
+    // presigned-upload existant (`category: 'replay'`) côté client, puis PATCH cette URL ici.
+    video_url: Joi.string().uri().max(2048),
     is_public: Joi.boolean(),
     is_premium: Joi.boolean(),
     replay_price: Joi.number().min(0),

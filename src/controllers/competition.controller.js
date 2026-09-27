@@ -65,9 +65,33 @@ export async function apply(req, res) {
   });
 }
 
+/** POST /competitions/:id/candidates/manual (manager/admin) */
+export async function addCandidateManually(req, res) {
+  return sendSuccess(
+    res,
+    await competitionService.addCandidateManually(req.params.id, req.user, req.roles, req.body),
+    { status: 201 },
+  );
+}
+
 /** POST /competitions/candidates/:id/review (manager) */
 export async function reviewCandidate(req, res) {
   return sendSuccess(res, await competitionService.reviewCandidate(req.params.id, req.user, req.roles, req.body));
+}
+
+/** DELETE /competitions/candidates/:id (manager) */
+export async function removeCandidate(req, res) {
+  return sendSuccess(res, await competitionService.removeCandidate(req.params.id, req.user, req.roles));
+}
+
+/** GET /competitions/candidates/pending-count/mine (manager) */
+export async function pendingCandidatesCount(req, res) {
+  return sendSuccess(res, { count: await competitionService.countPendingCandidates(req.user.id) });
+}
+
+/** POST /competitions/candidates/:id/jury-votes (manager) */
+export async function juryVotes(req, res) {
+  return sendSuccess(res, await competitionService.setJuryVotes(req.params.id, req.user, req.roles, req.body.juryVotes));
 }
 
 /** POST /competitions/:id/performer (manager) */
@@ -126,7 +150,11 @@ export default {
   myTickets,
   publish,
   apply,
+  addCandidateManually,
   reviewCandidate,
+  removeCandidate,
+  pendingCandidatesCount,
+  juryVotes,
   setPerformer,
   setFocus,
   finalize,

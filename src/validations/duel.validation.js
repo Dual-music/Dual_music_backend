@@ -39,6 +39,7 @@ export const updateSchema = {
     currentTimerEndsAt: Joi.date().allow(null),
     currentTimerTargetId: Joi.string().uuid().allow(null),
     scheduledTime: Joi.string().allow(null, ''),
+    chatEnabled: Joi.boolean(),
   }).min(1),
 };
 

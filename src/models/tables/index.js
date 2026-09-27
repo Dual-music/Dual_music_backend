@@ -36,6 +36,7 @@ import defineDuelTicket from './DuelTicket.model.js';
 import defineDuelVote from './DuelVote.model.js';
 import defineDuel from './Duel.model.js';
 import defineEmailNotificationPreference from './EmailNotificationPreference.model.js';
+import defineEventModerator from './EventModerator.model.js';
 import defineExchangeRate from './ExchangeRate.model.js';
 import defineFanSubscription from './FanSubscription.model.js';
 import defineGiftConversion from './GiftConversion.model.js';
@@ -64,6 +65,7 @@ import defineSponsorAdPlay from './SponsorAdPlay.model.js';
 import defineSponsorAdVideo from './SponsorAdVideo.model.js';
 import defineSponsorPriceTier from './SponsorPriceTier.model.js';
 import defineSponsorRequest from './SponsorRequest.model.js';
+import defineStreamAttendance from './StreamAttendance.model.js';
 import defineStreamBan from './StreamBan.model.js';
 import defineStreamRecording from './StreamRecording.model.js';
 import defineSubscriptionPlan from './SubscriptionPlan.model.js';
@@ -125,6 +127,7 @@ export const generatedModels = [
   { name: 'DuelVote', define: defineDuelVote },
   { name: 'Duel', define: defineDuel },
   { name: 'EmailNotificationPreference', define: defineEmailNotificationPreference },
+  { name: 'EventModerator', define: defineEventModerator },
   { name: 'ExchangeRate', define: defineExchangeRate },
   { name: 'FanSubscription', define: defineFanSubscription },
   { name: 'GiftConversion', define: defineGiftConversion },
@@ -153,6 +156,7 @@ export const generatedModels = [
   { name: 'SponsorAdVideo', define: defineSponsorAdVideo },
   { name: 'SponsorPriceTier', define: defineSponsorPriceTier },
   { name: 'SponsorRequest', define: defineSponsorRequest },
+  { name: 'StreamAttendance', define: defineStreamAttendance },
   { name: 'StreamBan', define: defineStreamBan },
   { name: 'StreamRecording', define: defineStreamRecording },
   { name: 'SubscriptionPlan', define: defineSubscriptionPlan },

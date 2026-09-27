@@ -126,8 +126,8 @@ proc: BEGIN
   END IF;
 
   SET v_tx_id = UUID();
-  INSERT INTO gift_transactions (id, from_user_id, to_user_id, gift_id, duel_id, live_id, created_at)
-    VALUES (v_tx_id, p_user_id, p_to_user_id, p_gift_id, p_duel_id, p_live_id, UTC_TIMESTAMP());
+  INSERT INTO gift_transactions (id, from_user_id, to_user_id, gift_id, duel_id, live_id, concert_id, created_at)
+    VALUES (v_tx_id, p_user_id, p_to_user_id, p_gift_id, p_duel_id, p_live_id, p_concert_id, UTC_TIMESTAMP());
 
   IF p_duel_id IS NOT NULL THEN
     SET v_source_type = 'gift_duel'; SET v_source_id = p_duel_id;

@@ -42,6 +42,9 @@ const CATEGORIES = {
   replay: { prefix: 'uploads/replays', kinds: ['video'], maxBytes: 2048 * MB, private: true },
   sponsor: { prefix: 'sponsor-media', kinds: ['image', 'video'], maxBytes: 500 * MB },
   attachment: { prefix: 'uploads/attachments', kinds: ['image', 'pdf'], maxBytes: 10 * MB },
+  // Sons courts d'interface (ex. carillon d'annonce du vainqueur, réglable par l'admin) — jamais
+  // de musique longue, d'où le plafond bas.
+  sound: { prefix: 'uploads/sounds', kinds: ['audio'], maxBytes: 10 * MB },
 };
 
 /** Object-key prefixes of categories that must never be served publicly. */
@@ -62,6 +65,7 @@ export function isPrivateKey(key) {
 function mimeKind(contentType) {
   if (/^image\//.test(contentType)) return 'image';
   if (/^video\//.test(contentType)) return 'video';
+  if (/^audio\//.test(contentType)) return 'audio';
   if (contentType === 'application/pdf') return 'pdf';
   return null;
 }

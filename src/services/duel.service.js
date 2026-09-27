@@ -162,6 +162,12 @@ export async function updateDuel(id, actor, roles, patch) {
     if (!roles.includes('admin')) throw ApiError.forbidden('FORBIDDEN');
     duel.scheduled_time = patch.scheduledTime;
   }
+  if (patch.chatEnabled !== undefined) {
+    // Coupe le chat pour tout le monde — réservé au manager (l'hôte), pas aux artistes
+    // participants ni à un modérateur désigné (voir moderation.service.js#canModerateEvent).
+    if (duel.manager_id !== actor.id && !roles.includes('admin')) throw ApiError.forbidden('FORBIDDEN');
+    duel.chat_enabled = patch.chatEnabled;
+  }
 
   await duel.save();
   emitToRoom('/live', roomName('duel', id), 'status', {
@@ -170,6 +176,9 @@ export async function updateDuel(id, actor, roles, patch) {
     winner_id: duel.winner_id,
     room_id: duel.room_id,
   });
+  if (patch.chatEnabled !== undefined) {
+    emitToRoom('/live', roomName('duel', id), 'settings', { duel_id: id, chat_enabled: duel.chat_enabled });
+  }
   if (timerChanged) {
     emitToRoom('/live', roomName('duel', id), 'timer', {
       duel_id: id,

@@ -22,7 +22,7 @@ export default function defineConcertDedication(sequelize) {
     id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4, allowNull: false },
     message: { type: DataTypes.TEXT, allowNull: false },
     metadata: { type: DataTypes.JSON, allowNull: true, defaultValue: {} },
-    paid_at: { type: DataTypes.DATE, allowNull: false },
+    paid_at: { type: DataTypes.DATE, allowNull: true },
     price_credits: { type: DataTypes.DECIMAL(18, 2), allowNull: false },
     rejected_at: { type: DataTypes.DATE, allowNull: true },
     status: { type: DataTypes.STRING, allowNull: false },

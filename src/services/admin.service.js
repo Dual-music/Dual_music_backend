@@ -654,44 +654,66 @@ export async function deleteLive({ id, adminId, adminName }) {
  * @param {string|Date} [params.scheduledDate]
  * @param {number} [params.ticketPrice]
  * @param {boolean} [params.allowsSponsorAds]
+ * @param {boolean} [params.acceptsSponsors] - Whether sponsor REQUESTS may be submitted for this duel (admin-only choice, mirrors `competitions.accepts_sponsors`).
+ * @param {string|Date|null} [params.sponsorSubmissionDeadline] - Only meaningful when `acceptsSponsors` is true.
  * @param {string} params.adminId
  * @param {string} [params.adminName]
  * @returns {Promise<{ request: object, duel: object }>}
  * @throws {ApiError} 404.
  */
-export async function approveDuelRequest({ id, managerId, scheduledDate, ticketPrice, allowsSponsorAds, adminId, adminName }) {
-  const { request, duel } = await db.sequelize.transaction(async (tx) => {
-    const req = await db.DuelRequest.findByPk(id, { transaction: tx });
+export async function approveDuelRequest({ id, managerId, scheduledDate, ticketPrice, allowsSponsorAds, acceptsSponsors, sponsorSubmissionDeadline, adminId, adminName }) {
+  const { request, duel, isNew } = await db.sequelize.transaction(async (tx) => {
+    const req = await db.DuelRequest.findByPk(id, { transaction: tx, lock: tx.LOCK.UPDATE });
     if (!req) throw ApiError.notFound('NOT_FOUND');
+    const alreadyApproved = req.status === 'approved';
     req.status = 'approved';
     if (managerId !== undefined && managerId !== null) req.manager_id = managerId;
     req.updated_at = new Date();
     await req.save({ transaction: tx });
 
+    const fields = {
+      manager_id: managerId ?? req.manager_id ?? null,
+      // scheduled_time est une colonne STRING ; proposed_date est un DATE (objet) → sérialiser
+      // (sinon Sequelize rejette « cannot be an array or an object » à l'approbation admin).
+      scheduled_time: (() => {
+        const v = scheduledDate ?? req.proposed_date ?? null;
+        return v ? new Date(v).toISOString() : null;
+      })(),
+      ticket_price: ticketPrice ?? 0,
+      allows_sponsor_ads: allowsSponsorAds ?? false,
+      accepts_sponsors: acceptsSponsors ?? true,
+      // Cohérent avec la création de concert : pas de date limite si les sponsors ne sont pas
+      // acceptés pour ce duel.
+      sponsor_submission_deadline: acceptsSponsors ? (sponsorSubmissionDeadline ?? null) : null,
+    };
+
+    // Idempotence : un second appel pour la même demande (double-clic, requête relancée avant
+    // que l'admin ait fini d'éditer date/prix...) NE DOIT PAS créer un second Duel. On retrouve
+    // le duel déjà créé via `duel_request_id` et on lui applique les dernières valeurs saisies —
+    // c'est cette édition-là qui doit faire foi, jamais un doublon figé sur les premières valeurs.
+    if (alreadyApproved) {
+      const existing = await db.Duel.findOne({ where: { duel_request_id: req.id }, transaction: tx });
+      if (existing) {
+        await existing.update(fields, { transaction: tx });
+        return { request: req, duel: existing, isNew: false };
+      }
+      // Demande marquée approuvée mais duel introuvable (incohérence historique) : on retombe
+      // sur une création, comme avant ce correctif.
+    }
+
     const created = await db.Duel.create(
-      {
-        artist1_id: req.requester_id,
-        artist2_id: req.opponent_id,
-        manager_id: managerId ?? req.manager_id ?? null,
-        // scheduled_time est une colonne STRING ; proposed_date est un DATE (objet) → sérialiser
-        // (sinon Sequelize rejette « cannot be an array or an object » à l'approbation admin).
-        scheduled_time: (() => {
-          const v = scheduledDate ?? req.proposed_date ?? null;
-          return v ? new Date(v).toISOString() : null;
-        })(),
-        ticket_price: ticketPrice ?? 0,
-        allows_sponsor_ads: allowsSponsorAds ?? false,
-        status: 'upcoming',
-      },
+      { ...fields, artist1_id: req.requester_id, artist2_id: req.opponent_id, duel_request_id: req.id, status: 'upcoming' },
       { transaction: tx },
     );
-    return { request: req, duel: created };
+    return { request: req, duel: created, isNew: true };
   });
 
-  await Promise.allSettled([
-    notifyUser({ userId: request.requester_id, type: 'duel_request', title: 'Duel approuvé', message: 'Votre demande de duel a été approuvée.', data: { duel_id: duel.id } }),
-    notifyUser({ userId: request.opponent_id, type: 'duel_request', title: 'Nouveau duel', message: 'Un duel vous a été programmé.', data: { duel_id: duel.id } }),
-  ]);
+  if (isNew) {
+    await Promise.allSettled([
+      notifyUser({ userId: request.requester_id, type: 'duel_request', title: 'Duel approuvé', message: 'Votre demande de duel a été approuvée.', data: { duel_id: duel.id } }),
+      notifyUser({ userId: request.opponent_id, type: 'duel_request', title: 'Nouveau duel', message: 'Un duel vous a été programmé.', data: { duel_id: duel.id } }),
+    ]);
+  }
   await logAdminAction({ adminId, adminName, actionType: 'approve_duel_request', targetType: 'duel_request', targetId: id, details: { duel_id: duel.id } });
   return { request, duel };
 }

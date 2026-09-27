@@ -13,8 +13,12 @@ export default function defineArtistLive(sequelize) {
   return sequelize.define(
     'ArtistLive',
     {
+    allow_guests: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    allows_dedications: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     artist_id: { type: DataTypes.UUID, allowNull: false },
+    chat_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+    dedication_min_price_credits: { type: DataTypes.DECIMAL(18, 2), allowNull: true },
     ended_at: { type: DataTypes.DATE, allowNull: true },
     id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4, allowNull: false },
     is_replay_available: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },

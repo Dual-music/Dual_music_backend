@@ -8,7 +8,7 @@ import Joi from 'joi';
 export const presignUpload = {
   body: Joi.object({
     category: Joi.string()
-      .valid('avatar', 'image', 'video', 'lifestyle', 'replay', 'sponsor', 'attachment')
+      .valid('avatar', 'image', 'video', 'lifestyle', 'replay', 'sponsor', 'attachment', 'sound')
       .required(),
     filename: Joi.string().max(255).required(),
     contentType: Joi.string().max(120).required(),

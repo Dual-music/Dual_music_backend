@@ -35,6 +35,15 @@ export default function defineStreamRecording(sequelize) {
       started_at: { type: DataTypes.DATE, allowNull: true },
       ended_at: { type: DataTypes.DATE, allowNull: true },
       created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+      // Pause/reprise (pas de pause native côté egress LiveKit) : segments successifs de cette
+      // session — `[{ seq, egressId, filePath, status, durationSeconds }]`.
+      segments: { type: DataTypes.JSON, allowNull: true },
+      // Durée cumulée des segments déjà clos (secondes) ; `run_started_at` (si non null) porte
+      // le temps du segment EN COURS, à additionner côté client pour le chrono live.
+      accumulated_seconds: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      run_started_at: { type: DataTypes.DATE, allowNull: true },
+      // Clé de stockage du fichier final (recollé si >1 segment), connue dès la création.
+      final_file_path: { type: DataTypes.STRING(2048), allowNull: true },
     },
     {
       tableName: 'stream_recordings',

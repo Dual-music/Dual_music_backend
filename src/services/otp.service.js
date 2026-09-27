@@ -23,6 +23,28 @@ const MAX_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 60_000;
 
 /**
+ * Renders the OTP email's inner content (the shared branded shell/header/footer is applied by
+ * `messaging.service.js#wrapEmail`) with the code displayed large, bold and centered in a
+ * button-like block — a plain sentence with the code buried inside was easy to miss or mistype,
+ * especially on mobile mail clients.
+ * @param {string} code
+ * @param {number} ttlMinutes
+ * @returns {string}
+ */
+function otpEmailHtml(code, ttlMinutes) {
+  return `
+<p style="margin:0 0 20px;">Voici votre code de vérification :</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 20px;">
+  <tr><td align="center" style="background:#9333ea; border-radius:12px; padding:16px 32px;">
+    <span style="font-size:32px; font-weight:800; letter-spacing:9px; color:#ffffff; font-family:'Courier New',monospace;">${code}</span>
+  </td></tr>
+</table>
+<p style="margin:0; text-align:center; color:#a89fc4; font-size:13px;">
+  Ce code expire dans ${ttlMinutes} minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.
+</p>`.trim();
+}
+
+/**
  * Generates, stores and delivers an OTP.
  * @param {object} params
  * @param {string|null} [params.userId]
@@ -51,11 +73,12 @@ export async function sendOtp({ userId = null, channel, destination, purpose = '
     attempts: 0,
   });
 
-  const text = `Dual Music — votre code de vérification est ${code}. Il expire dans ${Math.floor(config.otp.ttlSeconds / 60)} minutes.`;
+  const ttlMinutes = Math.floor(config.otp.ttlSeconds / 60);
+  const text = `Dual Music — votre code de vérification est ${code}. Il expire dans ${ttlMinutes} minutes.`;
   if (channel === 'sms') {
     await sendSms({ to: destination, message: text });
   } else {
-    await sendEmail({ to: destination, subject: 'Dual Music — Code de vérification', html: `<p>${text}</p>`, text });
+    await sendEmail({ to: destination, subject: 'Dual Music — Code de vérification', html: otpEmailHtml(code, ttlMinutes), text });
   }
   logger.info({ destination, purpose, channel }, 'OTP sent');
   return { expiresAt };

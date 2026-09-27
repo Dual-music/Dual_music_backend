@@ -1,0 +1,22 @@
+# ============================================================================
+# Configuration LiveKit EGRESS — enregistrement des directs (DÉVELOPPEMENT LOCAL).
+# L'egress lance un Chrome "headless" qui rejoint la room, compose la vidéo et
+# l'envoie vers la sortie fournie par le backend (R2/S3). Il communique avec le
+# serveur LiveKit via Redis (jobs) + WebSocket (ws_url).
+# ⚠️ Clés de DÉVELOPPEMENT — ne pas réutiliser en production.
+# ============================================================================
+
+# Même Redis que le serveur LiveKit (nom du service docker-compose).
+redis:
+  address: redis:6379
+
+# Doit correspondre EXACTEMENT à une clé de livekit.yaml.
+api_key: devkey
+api_secret: dmlocaldevsecret0123456789abcdefghijABCD
+
+# URL de signalisation du serveur LiveKit, joignable DEPUIS le conteneur egress
+# (réseau docker interne → nom du service `livekit`). Non chiffré en local.
+ws_url: ws://livekit:7880
+insecure: true
+
+log_level: info

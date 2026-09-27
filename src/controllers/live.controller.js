@@ -43,6 +43,11 @@ export async function updateStatus(req, res) {
   return sendSuccess(res, await liveService.updateLiveStatus(req.params.id, req.user.id, req.roles || [], req.body.status));
 }
 
+/** PATCH /lives/:id/settings — host or admin/moderator toggles dedications/guest-invites. */
+export async function updateSettings(req, res) {
+  return sendSuccess(res, await liveService.updateLiveSettings(req.params.id, req.user.id, req.roles || [], req.body));
+}
+
 /** DELETE /lives/join-requests/:id — requester (or host/admin) cancels a request. */
 export async function cancelJoin(req, res) {
   return sendSuccess(res, await liveService.cancelJoinRequest(req.params.id, req.user.id, req.roles || []));
@@ -73,4 +78,4 @@ export async function respondJoin(req, res) {
   return sendSuccess(res, await liveService.respondJoin(req.params.id, req.user.id, req.body.status));
 }
 
-export default { list, titles, getOne, reportSummary, start, end, updateStatus, like, likes, joinRequests, join, respondJoin, cancelJoin };
+export default { list, titles, getOne, reportSummary, start, end, updateStatus, updateSettings, like, likes, joinRequests, join, respondJoin, cancelJoin };

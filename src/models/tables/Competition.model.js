@@ -18,6 +18,7 @@ export default function defineCompetition(sequelize) {
     city: { type: DataTypes.STRING, allowNull: true },
     commune: { type: DataTypes.STRING, allowNull: true },
     country: { type: DataTypes.STRING, allowNull: true },
+    chat_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     cover_url: { type: DataTypes.STRING(2048), allowNull: true },
     created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
     current_performer_duration_sec: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0 },

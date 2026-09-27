@@ -1,0 +1,50 @@
+# LiveKit local (dev/LAN) — illimité et gratuit, remplace LiveKit Cloud pendant les tests.
+# Lancer :  docker compose up -d      (dans ce dossier)
+# Arrêter : docker compose down
+#
+# ⚠️ Édite d'abord le fichier .env de CE dossier pour y mettre l'IP LAN de ton PC
+#    (LIVEKIT_NODE_IP) — c'est l'adresse que le mobile et le web utilisent.
+#
+# Services :
+#   - livekit : le serveur SFU (vidéo/audio/chat/votes…).
+#   - redis   : file de jobs partagée entre livekit et egress (enregistrement).
+#   - egress  : enregistrement des directs (Chrome headless → R2/S3). Nécessite
+#               LIVEKIT_EGRESS_ENABLED=true dans l'.env du backend.
+
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: dm-livekit-local
+    restart: unless-stopped
+    # --node-ip = l'IP LAN de CE PC (celle que voient les clients). Vient du .env.
+    command: --config /etc/livekit.yaml --node-ip ${LIVEKIT_NODE_IP}
+    ports:
+      - "7880:7880"          # signalisation WebSocket
+      - "7881:7881"          # média TCP (fallback)
+      - "7882:7882/udp"      # média UDP (mux)
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: dm-livekit-redis
+    restart: unless-stopped
+    # Pas de port publié : usage strictement interne (livekit <-> egress).
+
+  egress:
+    image: livekit/egress:latest
+    container_name: dm-livekit-egress
+    restart: unless-stopped
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
+    # Chrome headless a besoin de cette capacité (bac à sable) + de mémoire partagée.
+    cap_add:
+      - CAP_SYS_ADMIN
+    shm_size: "1gb"
+    depends_on:
+      - redis
+      - livekit

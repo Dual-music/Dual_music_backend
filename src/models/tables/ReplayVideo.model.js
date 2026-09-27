@@ -24,6 +24,7 @@ export default function defineReplayVideo(sequelize) {
     id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4, allowNull: false },
     is_premium: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     is_public: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    live_id: { type: DataTypes.UUID, allowNull: true },
     recorded_date: { type: DataTypes.DATE, allowNull: false },
     replay_price: { type: DataTypes.DECIMAL(18, 2), allowNull: false, defaultValue: 0 },
     source_type: { type: DataTypes.STRING, allowNull: false },

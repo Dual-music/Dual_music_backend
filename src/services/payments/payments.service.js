@@ -3,7 +3,7 @@ import { logger } from '../../config/logger.js';
 import { db } from '../../models/index.js';
 import { emitToUser } from '../../realtime/bus.js';
 import { ApiError } from '../../utils/ApiError.js';
-import { randomToken } from '../../utils/crypto.js';
+import { randomToken, safeEqual } from '../../utils/crypto.js';
 import { callProcedure } from '../../utils/procedures.js';
 import { claimWebhookEvent, markWebhookProcessed } from '../webhook.service.js';
 
@@ -132,8 +132,28 @@ export async function listCinetpayTransactions({ limit = 100 } = {}) {
 export async function initCinetpay({ userId, amount, countryCode, phone, paymentMethod }) {
   const country = await db.CinetpayCountry.findOne({ where: { country_code: countryCode, is_active: true } });
   if (!country) throw ApiError.badRequest('BAD_REQUEST', { details: { countryCode: 'unsupported' } });
-  // Opérateur Mobile Money : fourni par l'app, sinon 1er opérateur actif du pays.
-  const method = paymentMethod || country.operators?.[0]?.code || 'ALL';
+
+  // Opérateur Mobile Money. Une valeur fournie par le client est validée contre la
+  // liste blanche du pays et rejetée si inconnue — elle ne doit jamais atteindre le
+  // provider telle quelle. Sans valeur, on retombe sur le 1er opérateur du pays,
+  // ou sur `ALL` (convention CinetPay : le payeur choisit sur la page hébergée).
+  // MySQL désérialise les colonnes JSON, SQLite peut rendre une chaîne : on
+  // normalise pour que la liste blanche ne soit jamais vide par accident.
+  const operators = Array.isArray(country.operators)
+    ? country.operators
+    : JSON.parse(typeof country.operators === 'string' ? country.operators : '[]');
+  const wanted = String(paymentMethod ?? '').trim();
+  let method;
+  if (wanted) {
+    method = operators.find((o) => o.code === wanted)?.code;
+    if (!method) {
+      throw ApiError.badRequest('CINETPAY_OPERATOR_INVALID', {
+        details: { provided: wanted, allowed: operators.map((o) => o.code) },
+      });
+    }
+  } else {
+    method = operators[0]?.code ?? 'ALL';
+  }
 
   const currency = country.currency;
   const { credits } = await computeCreditsForRecharge(amount, currency, 'cinetpay');
@@ -313,41 +333,148 @@ export async function verifyAppleCredits({ userId, transactionId }) {
 }
 
 /**
- * Admin diagnostic: re-checks a CinetPay transaction's status server-to-server
- * (mirrors `cinetpay-verify-tx`). Read-only — does not credit.
+ * Admin diagnostic: re-checks a CinetPay transaction server-to-server and, when
+ * asked, applies the outcome through the same idempotent procedures the webhook
+ * uses. C'est l'outil de support de première ligne pour une transaction bloquée.
+ *
+ * Fonctionne pour un encaissement comme pour un transfert : le sens est déduit de
+ * `kind`. `settle=false` (défaut) ne fait qu'observer.
+ *
  * @param {string} merchantId
- * @returns {Promise<{ merchantTransactionId: string, accepted: boolean, status: string }>}
+ * @param {{ settle?: boolean }} [opts]
+ * @returns {Promise<{ merchantTransactionId: string, kind: string, accepted: boolean, status: string, code: string, settled: string|null }>}
+ * @throws {ApiError} 404 lorsque l'identifiant est inconnu.
+ * @sideeffect Avec `settle`, peut créditer un portefeuille, clôturer un retrait
+ *   ou rembourser des crédits.
  */
-export async function verifyCinetpayTransaction(merchantId) {
+export async function verifyCinetpayTransaction(merchantId, { settle = false } = {}) {
   const tx = await db.CinetpayTransaction.findOne({ where: { merchant_transaction_id: merchantId } });
   if (!tx) throw ApiError.notFound('NOT_FOUND');
+
+  if (tx.kind === 'payout') {
+    const check = await cinetpay.checkTransfer({ countryCode: tx.country_code, transactionId: merchantId });
+    await tx.update({ raw_verify_response: check.raw ?? {}, updated_at: new Date() });
+    let settled = null;
+    if (settle) {
+      if (check.accepted) {
+        await callProcedure('cinetpay_confirm_payout', [merchantId], ['success', 'code', 'user_id', 'credits']);
+        settled = 'confirmed';
+      } else if (check.rejected) {
+        await callProcedure(
+          'cinetpay_revert_payout',
+          [merchantId, `admin_verify: ${check.status}`],
+          ['success', 'code', 'user_id', 'credits'],
+        );
+        settled = 'reverted';
+      } else {
+        settled = 'pending';
+      }
+    }
+    return {
+      merchantTransactionId: merchantId,
+      kind: 'payout',
+      accepted: check.accepted,
+      status: check.status,
+      code: check.code,
+      settled,
+    };
+  }
+
   const check = await cinetpay.checkPayment({ countryCode: tx.country_code, transactionId: merchantId });
-  return { merchantTransactionId: merchantId, accepted: check.accepted, status: check.status };
+  await tx.update({ raw_verify_response: check.raw ?? {}, updated_at: new Date() });
+  let settled = null;
+  if (settle) {
+    if (check.accepted) {
+      const out = await callProcedure(
+        'cinetpay_credit_wallet',
+        [merchantId, Number(tx.credits_amount)],
+        ['ok', 'already', 'error', 'balance'],
+      );
+      settled = out.already ? 'already' : 'credited';
+      if (out.ok && !out.already) {
+        emitToUser(tx.user_id, 'tx:credit', { amount: Number(tx.credits_amount), currency: tx.currency });
+      }
+    } else if (check.insufficient) {
+      await callProcedure(
+        'cinetpay_fail_payin',
+        [merchantId, 'insufficient', `admin_verify code=${check.code}`],
+        ['success', 'code'],
+      );
+      settled = 'insufficient';
+    } else {
+      settled = 'pending';
+    }
+  }
+  return {
+    merchantTransactionId: merchantId,
+    kind: 'payin',
+    accepted: check.accepted,
+    status: check.status,
+    code: check.code,
+    settled,
+  };
 }
 
 /**
  * Handles a CinetPay pay-in webhook. Authoritatively re-checks the transaction
  * server-to-server before crediting (never trusts the webhook body alone).
+ *
+ * Le corps ne sert qu'à identifier la transaction et à prouver l'origine de la
+ * notification via `notify_token` (comparaison en temps constant). Un jeton
+ * invalide est rejeté avant tout appel sortant : sans ce contrôle, n'importe qui
+ * peut faire émettre des requêtes vers le provider en devinant des identifiants.
+ *
  * @param {Record<string, any>} body - Parsed webhook form/body.
- * @returns {Promise<{ ok: boolean }>}
+ * @param {string} [headerToken] - Valeur de l'en-tête `x-token`, si présent.
+ * @returns {Promise<{ ok: boolean, replayed?: boolean, outcome?: string, reason?: string }>}
+ *   `ok:false` + `reason:'bad_token'` → le contrôleur doit répondre 403.
  */
-export async function handleCinetpayWebhook(body) {
-  const merchantId = body.cpm_trans_id || body.transaction_id;
+export async function handleCinetpayWebhook(body, headerToken) {
+  const merchantId = body?.cpm_trans_id || body?.merchant_transaction_id || body?.transaction_id;
   if (!merchantId) throw ApiError.badRequest('BAD_REQUEST');
+
+  const tx = await db.CinetpayTransaction.findOne({
+    where: { merchant_transaction_id: merchantId, kind: 'payin' },
+  });
+  // Inconnue : acquitter sans erreur, sinon le provider réessaie sans fin.
+  if (!tx) {
+    logger.warn({ merchantId }, 'CinetPay payin webhook for unknown transaction');
+    return { ok: true, outcome: 'unknown' };
+  }
+
+  const incoming = String(body?.cpm_custom || body?.notify_token || headerToken || '');
+  if (!safeEqual(incoming, tx.notify_token)) {
+    logger.warn({ merchantId }, 'CinetPay payin webhook: invalid notify_token');
+    return { ok: false, reason: 'bad_token' };
+  }
 
   // Replay protection: skip an already-settled event.
   const claim = await claimWebhookEvent('cinetpay', merchantId);
   if (!claim.fresh) return { ok: true, replayed: true };
 
-  const tx = await db.CinetpayTransaction.findOne({ where: { merchant_transaction_id: merchantId } });
-  if (!tx) throw ApiError.notFound('NOT_FOUND');
   await tx.update({ raw_webhook_payload: body, updated_at: new Date() });
 
   const check = await cinetpay.checkPayment({ countryCode: tx.country_code, transactionId: merchantId });
+  await tx.update({ raw_verify_response: check.raw ?? {}, updated_at: new Date() });
+
   if (!check.accepted) {
-    logger.warn({ merchantId, status: check.status }, 'CinetPay payment not accepted');
-    return { ok: false };
+    // Solde payeur insuffisant : état distinct de l'échec, l'utilisateur peut
+    // recharger son Mobile Money et relancer le même paiement.
+    if (check.insufficient) {
+      await callProcedure(
+        'cinetpay_fail_payin',
+        [merchantId, 'insufficient', `code=${check.code} status=${check.status}`],
+        ['success', 'code'],
+      );
+      await markWebhookProcessed(claim.record);
+      return { ok: true, outcome: 'insufficient' };
+    }
+    // Statut non final (paiement en cours) : ne rien écrire, la notification
+    // suivante ou la réconciliation tranchera.
+    logger.warn({ merchantId, status: check.status, code: check.code }, 'CinetPay payment not accepted');
+    return { ok: true, outcome: 'pending' };
   }
+
   const out = await callProcedure(
     'cinetpay_credit_wallet',
     [merchantId, Number(tx.credits_amount)],
@@ -357,7 +484,7 @@ export async function handleCinetpayWebhook(body) {
   await markWebhookProcessed(claim.record);
   // Credit settled — nudge the buyer so their recharge toast can fire.
   if (!out.already) emitToUser(tx.user_id, 'tx:credit', { amount: Number(tx.credits_amount), currency: tx.currency });
-  return { ok: true };
+  return { ok: true, outcome: out.already ? 'already' : 'credited' };
 }
 
 /**
@@ -462,6 +589,7 @@ export default {
   initMoneroo,
   initStripeCredits,
   initStripeSubscription,
+  verifyAppleCredits,
   handleCinetpayWebhook,
   handleMonerooWebhook,
   handleStripeEvent,

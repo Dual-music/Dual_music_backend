@@ -23,67 +23,181 @@ async function dedicationConfig(concertType) {
 }
 
 /**
- * Resolves the artist to credit + whether dedications are allowed for an event.
+ * Resolves the artist to credit + whether dedications are allowed for an event, + an optional
+ * per-event minimum-price override (lives only, for now — falls back to the global default
+ * from {@link dedicationConfig} when absent/null).
  * @param {string} concertType - 'artist_concert' | 'artist_live'.
  * @param {string} concertId
- * @returns {Promise<{ artistId: string }>}
+ * @returns {Promise<{ artistId: string, minPriceOverride: number|null }>}
  * @throws {ApiError} 400 unsupported · 404 not found · 409 disabled.
  */
 async function resolveDedicationArtist(concertType, concertId) {
   if (concertType === 'artist_concert') {
-    const concert = await db.ArtistConcert.findByPk(concertId, { attributes: ['artist_id', 'allows_dedications'], raw: true });
+    const concert = await db.ArtistConcert.findByPk(concertId, {
+      attributes: ['artist_id', 'allows_dedications', 'dedication_submission_deadline', 'status'],
+      raw: true,
+    });
     if (!concert) throw ApiError.notFound('EVENT_NOT_FOUND');
     // `raw` boolean comes back as 0/1 (SQLite and mysql2), so compare truthiness.
     if (!concert.allows_dedications) throw ApiError.conflict('DEDICATIONS_DISABLED');
-    return { artistId: concert.artist_id };
+    // Contrairement au LIVE (dédicaces possibles pendant la diffusion), un CONCERT exige que
+    // toutes les demandes soient traitées AVANT le début du direct — imposé serveur, pas
+    // seulement via la date limite (qui reste une coupure optionnelle plus précoce).
+    if (concert.status !== 'upcoming') {
+      throw ApiError.conflict('DEDICATIONS_CLOSED_LIVE', { details: { status: concert.status } });
+    }
+    const deadline = concert.dedication_submission_deadline;
+    if (deadline && new Date(deadline) < new Date()) {
+      throw ApiError.conflict('DEDICATION_DEADLINE_PASSED', { details: { deadline } });
+    }
+    return { artistId: concert.artist_id, minPriceOverride: null };
   }
   if (concertType === 'artist_live') {
-    const live = await db.ArtistLive.findByPk(concertId, { attributes: ['artist_id'], raw: true });
+    const live = await db.ArtistLive.findByPk(concertId, {
+      attributes: ['artist_id', 'allows_dedications', 'dedication_min_price_credits'],
+      raw: true,
+    });
     if (!live) throw ApiError.notFound('EVENT_NOT_FOUND');
-    return { artistId: live.artist_id };
+    if (!live.allows_dedications) throw ApiError.conflict('DEDICATIONS_DISABLED');
+    const override = live.dedication_min_price_credits;
+    return { artistId: live.artist_id, minPriceOverride: override != null ? Number(override) : null };
   }
   throw ApiError.badRequest('VALIDATION_ERROR', { details: { concertType } });
 }
 
+/** Nom de room realtime pour un événement de dédicace (`live:<id>` / `concert:<id>`). */
+function dedicationRoom(concertType, concertId) {
+  return roomName(concertType === 'artist_live' ? 'live' : 'concert', concertId);
+}
+
 /**
- * Purchases a concert/live dedication: validates, prices, and atomically debits
- * the fan + credits the artist (`purchase_concert_dedication_from_wallet`).
+ * Requests a concert/live dedication: validates + creates a PENDING row. Does
+ * **NOT** charge the fan — the debit only happens if/when the artist accepts
+ * (see {@link acceptDedication}), so a rejected request never touches a wallet
+ * and the fan is never shown a balance that doesn't match what they were
+ * actually charged (`purchase_concert_dedication_from_wallet`, now debit-free).
  * @param {string} fanId
  * @param {object} input - `{ concertId, concertType, message, priceCredits }`
  * @returns {Promise<{ dedicationId: string }>}
- * @throws {ApiError} on validation / balance failures.
+ * @throws {ApiError} on validation failures.
  */
 export async function purchaseDedication(fanId, { concertId, concertType, message, priceCredits }) {
   const clean = sanitizeText(message, { maxLength: 500 });
   if (clean.length < 3) throw ApiError.badRequest('DEDICATION_MESSAGE_REQUIRED');
   if (!(priceCredits > 0)) throw ApiError.badRequest('AMOUNT_INVALID');
 
-  const { minPrice, platformPct } = await dedicationConfig(concertType);
+  const { minPrice: globalMinPrice, platformPct } = await dedicationConfig(concertType);
+  // Vérifie aussi (disabled/introuvable) AVANT le prix : `resolveDedicationArtist` peut fournir
+  // une surcharge de prix minimum propre au live, prioritaire sur le défaut global de la plateforme.
+  const { artistId, minPriceOverride } = await resolveDedicationArtist(concertType, concertId);
+  const minPrice = minPriceOverride ?? globalMinPrice;
   if (priceCredits < minPrice) throw ApiError.badRequest('DEDICATION_PRICE_BELOW_MIN', { details: { min: minPrice } });
-
-  const { artistId } = await resolveDedicationArtist(concertType, concertId);
 
   const out = await callProcedure(
     'purchase_concert_dedication_from_wallet',
     [fanId, concertId, concertType, artistId, clean, priceCredits, platformPct],
     ['success', 'code', 'dedication_id'],
   );
-  if (!out.success) {
-    if (out.code === 'insufficient_balance') throw ApiError.badRequest('WALLET_INSUFFICIENT');
-    throw ApiError.badRequest('BAD_REQUEST', { details: { code: out.code } });
-  }
+  if (!out.success) throw ApiError.badRequest('BAD_REQUEST', { details: { code: out.code } });
+
   await notifyUser({
     userId: artistId,
     type: 'dedication_received',
     title: 'Nouvelle dédicace',
-    message: 'Un fan a demandé une dédicace.',
+    message: 'Un fan a demandé une dédicace — accepte ou refuse-la.',
     data: { dedication_id: out.dedication_id, concert_id: concertId, concert_type: concertType },
   }).catch(() => {});
+  // Rafraîchit le badge de l'artiste EN DIRECT (pas besoin d'ouvrir le panneau pour le voir).
+  emitToRoom('/live', dedicationRoom(concertType, concertId), 'dedication:new', {
+    dedication_id: out.dedication_id, concert_id: concertId, concert_type: concertType, artist_id: artistId,
+  });
   return { dedicationId: out.dedication_id };
 }
 
 /**
- * Marks a dedication as delivered (artist owner or admin) and notifies the fan.
+ * Accepts a PENDING dedication (artist owner or admin) : charges the fan NOW
+ * (atomic debit + artist credit + revenue split, `accept_concert_dedication_from_wallet`),
+ * notifies the fan (amount actually charged) and broadcasts so every open client
+ * (host's list AND the fan's own balance) refreshes without a page reload.
+ * @param {string} id
+ * @param {string} actorId
+ * @param {string[]} roles
+ * @returns {Promise<object>}
+ * @throws {ApiError} 404 · 403 · 409 (not pending) · 400 (insufficient balance).
+ */
+export async function acceptDedication(id, actorId, roles) {
+  const ded = await db.ConcertDedication.findByPk(id);
+  if (!ded) throw ApiError.notFound('NOT_FOUND');
+  const isOwner = ded.artist_id === actorId;
+  const isStaff = roles.includes('admin') || roles.includes('moderator');
+  if (!isOwner && !isStaff) throw ApiError.forbidden('FORBIDDEN');
+  if (ded.status !== 'pending') throw ApiError.conflict('DEDICATION_NOT_PENDING');
+
+  const { platformPct } = await dedicationConfig(ded.concert_type);
+  const out = await callProcedure(
+    'accept_concert_dedication_from_wallet',
+    [id, platformPct],
+    ['success', 'code'],
+  );
+  if (!out.success) {
+    if (out.code === 'insufficient_balance') throw ApiError.badRequest('WALLET_INSUFFICIENT');
+    throw ApiError.badRequest('BAD_REQUEST', { details: { code: out.code } });
+  }
+  await ded.reload();
+
+  await notifyUser({
+    userId: ded.fan_id,
+    type: 'dedication_accepted',
+    title: "Dédicace acceptée par l'artiste !",
+    message: `Ta dédicace a été acceptée — ${Number(ded.price_credits)} crédits ont été débités de ton solde. Merci pour ton soutien !`,
+    data: { dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type, price_credits: Number(ded.price_credits) },
+  }).catch(() => {});
+  emitToRoom('/live', dedicationRoom(ded.concert_type, ded.concert_id), 'dedication:update', {
+    dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type,
+    fan_id: ded.fan_id, status: 'paid', price_credits: Number(ded.price_credits),
+  });
+  return ded;
+}
+
+/**
+ * Rejects a PENDING dedication (artist owner or admin) : no wallet touched at
+ * all — the fan was never charged. Notifies the fan and broadcasts.
+ * @param {string} id
+ * @param {string} actorId
+ * @param {string[]} roles
+ * @returns {Promise<object>}
+ * @throws {ApiError} 404 · 403 · 409 (not pending).
+ */
+export async function rejectDedication(id, actorId, roles) {
+  const ded = await db.ConcertDedication.findByPk(id);
+  if (!ded) throw ApiError.notFound('NOT_FOUND');
+  const isOwner = ded.artist_id === actorId;
+  const isStaff = roles.includes('admin') || roles.includes('moderator');
+  if (!isOwner && !isStaff) throw ApiError.forbidden('FORBIDDEN');
+  if (ded.status !== 'pending') throw ApiError.conflict('DEDICATION_NOT_PENDING');
+
+  ded.status = 'rejected';
+  ded.rejected_at = new Date();
+  await ded.save();
+
+  await notifyUser({
+    userId: ded.fan_id,
+    type: 'dedication_rejected',
+    title: "Dédicace refusée",
+    message: "L'artiste n'a pas pu donner suite à ta dédicace cette fois-ci. Tu n'as rien été débité.",
+    data: { dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type },
+  }).catch(() => {});
+  emitToRoom('/live', dedicationRoom(ded.concert_type, ded.concert_id), 'dedication:update', {
+    dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type,
+    fan_id: ded.fan_id, status: 'rejected',
+  });
+  return ded;
+}
+
+/**
+ * Marks an ACCEPTED (`paid`) dedication as delivered (artist owner or admin)
+ * and notifies the fan. Distinct step from {@link acceptDedication} — the
+ * charge already happened at accept time, this just confirms it was performed.
  * @param {string} id
  * @param {string} actorId
  * @param {string[]} roles
@@ -103,10 +217,14 @@ export async function deliverDedication(id, actorId, roles) {
   await notifyUser({
     userId: ded.fan_id,
     type: 'dedication_delivered',
-    title: "Dédicace acceptée par l'artiste !",
-    message: "Bonne nouvelle : votre dédicace a été acceptée et sera interprétée. Merci pour votre soutien !",
+    title: 'Ta dédicace a été interprétée !',
+    message: "L'artiste vient de faire ta dédicace en direct. Merci pour ton soutien !",
     data: { dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type },
   }).catch(() => {});
+  emitToRoom('/live', dedicationRoom(ded.concert_type, ded.concert_id), 'dedication:update', {
+    dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type,
+    fan_id: ded.fan_id, status: 'delivered',
+  });
   return ded;
 }
 
@@ -298,6 +416,10 @@ export async function createArtistConcert(artistId, input) {
     cover_image_url: input.coverImageUrl ?? null,
     allows_dedications: input.allowsDedications ?? true,
     allows_sponsor_ads: input.allowsSponsorAds ?? true,
+    // Dates limites saisies à la création si la case correspondante est cochée (sinon `null` :
+    // pas de coupure, cohérent avec le comportement existant des demandes de sponsor).
+    sponsor_submission_deadline: input.allowsSponsorAds ? (input.sponsorSubmissionDeadline ?? null) : null,
+    dedication_submission_deadline: input.allowsDedications ? (input.dedicationSubmissionDeadline ?? null) : null,
     approval_status: requireApproval ? 'pending' : 'approved',
     status: 'upcoming',
   });
@@ -411,11 +533,12 @@ export async function listMyArtistConcerts(artistId) {
 const ARTIST_CONCERT_EDITABLE = new Set([
   'title', 'description', 'scheduledDate', 'ticketPrice', 'maxTickets',
   'coverImageUrl', 'allowsDedications', 'allowsSponsorAds', 'status',
-  'recordingUrl', 'isReplayAvailable',
+  'recordingUrl', 'isReplayAvailable', 'chatEnabled',
+  'sponsorSubmissionDeadline', 'dedicationSubmissionDeadline',
 ]);
 
 /** Keys that don't count as reviewable "content" (no re-approval on change). */
-const ARTIST_CONCERT_NON_CONTENT = new Set(['status', 'recordingUrl', 'isReplayAvailable']);
+const ARTIST_CONCERT_NON_CONTENT = new Set(['status', 'recordingUrl', 'isReplayAvailable', 'chatEnabled']);
 
 /**
  * Updates an artist concert (owner or admin). Editing content resets an already
@@ -442,7 +565,9 @@ export async function updateArtistConcert(id, actorId, roles, patch) {
     title: 'title', description: 'description', scheduledDate: 'scheduled_date',
     ticketPrice: 'ticket_price', maxTickets: 'max_tickets', coverImageUrl: 'cover_image_url',
     allowsDedications: 'allows_dedications', allowsSponsorAds: 'allows_sponsor_ads', status: 'status',
-    recordingUrl: 'recording_url', isReplayAvailable: 'is_replay_available',
+    recordingUrl: 'recording_url', isReplayAvailable: 'is_replay_available', chatEnabled: 'chat_enabled',
+    sponsorSubmissionDeadline: 'sponsor_submission_deadline',
+    dedicationSubmissionDeadline: 'dedication_submission_deadline',
   };
   let contentChanged = false;
   for (const [key, col] of Object.entries(map)) {
@@ -461,6 +586,9 @@ export async function updateArtistConcert(id, actorId, roles, patch) {
     // Egress : enregistre le concert du passage en live à la fin (no-op si egress désactivé).
     if (patch.status === 'live') void startRecording({ sourceType: 'concert', sourceId: id, artistId: concert.artist_id, createdBy: concert.artist_id }).catch(() => {});
     if (patch.status === 'ended') void stopRecording({ sourceType: 'concert', sourceId: id }).catch(() => {});
+  }
+  if ('chatEnabled' in patch) {
+    emitToRoom('/live', roomName('concert', id), 'settings', { concert_id: id, chat_enabled: concert.chat_enabled });
   }
   return concert;
 }
@@ -529,6 +657,8 @@ export default {
   setReminder,
   removeReminder,
   purchaseDedication,
+  acceptDedication,
+  rejectDedication,
   deliverDedication,
   listConcertDedications,
   listMyDedications,

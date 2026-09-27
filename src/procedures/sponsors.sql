@@ -36,7 +36,7 @@ proc: BEGIN
   IF v_owner <> p_user_id THEN SET p_code = 'forbidden'; ROLLBACK; LEAVE proc; END IF;
   IF v_paid IS NOT NULL THEN SET p_success = TRUE; SET p_code = 'already_paid'; COMMIT; LEAVE proc; END IF;
   IF v_price <= 0 THEN
-    UPDATE sponsor_requests SET paid_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() WHERE id = p_request_id;
+    UPDATE sponsor_requests SET status = 'paid', paid_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() WHERE id = p_request_id;
     COMMIT; SET p_success = TRUE; SET p_code = 'ok'; LEAVE proc;
   END IF;
 
@@ -44,7 +44,10 @@ proc: BEGIN
     WHERE user_id = p_user_id AND balance >= v_price;
   IF ROW_COUNT() = 0 THEN SET p_code = 'insufficient_balance'; ROLLBACK; LEAVE proc; END IF;
 
-  UPDATE sponsor_requests SET paid_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() WHERE id = p_request_id;
+  -- Sans passer `status` à 'paid' ici, la demande restait indéfiniment "awaiting_payment" une
+  -- fois payée : le bouton "Payer" du demandeur ne disparaissait jamais, et l'admin restait
+  -- bloqué sur "en attente de paiement" (son UI ne montre "Approuver" que pour status = 'paid').
+  UPDATE sponsor_requests SET status = 'paid', paid_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP() WHERE id = p_request_id;
 
   COMMIT;
   SET p_success = TRUE; SET p_code = 'ok';

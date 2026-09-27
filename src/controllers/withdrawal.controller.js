@@ -1,3 +1,4 @@
+import * as payoutService from '../services/payments/payout.service.js';
 import * as withdrawalService from '../services/withdrawal.service.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 
@@ -68,6 +69,26 @@ export async function complete(req, res) {
   return sendSuccess(res, await withdrawalService.complete(req.params.id, req.user.id, req.body.providerTxId));
 }
 
+/**
+ * POST /withdrawals/:id/payout — déclenche le versement CinetPay.
+ *
+ * Ouvert à l'admin, et au propriétaire de la demande lorsqu'elle est en
+ * versement automatique (`auto_processed`). Le contrôle fin est fait dans le
+ * service, qui seul connaît la demande.
+ */
+export async function payout(req, res) {
+  const isAdmin = Boolean(req.roles?.includes('admin'));
+  return sendSuccess(
+    res,
+    await payoutService.initiateCinetpayPayout({
+      withdrawalId: req.params.id,
+      actorId: req.user.id,
+      isAdmin,
+    }),
+    { status: 202 },
+  );
+}
+
 /** GET /withdrawals/methods */
 export async function listMethods(req, res) {
   return sendSuccess(res, await withdrawalService.listMethods(req.user.id));
@@ -101,6 +122,7 @@ export default {
   approve,
   reject,
   complete,
+  payout,
   listMethods,
   addMethod,
   updateMethod,

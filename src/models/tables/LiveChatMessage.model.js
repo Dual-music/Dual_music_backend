@@ -18,6 +18,7 @@ export default function defineLiveChatMessage(sequelize) {
     is_moderated: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
     live_id: { type: DataTypes.UUID, allowNull: false },
     message: { type: DataTypes.TEXT, allowNull: false },
+    parent_id: { type: DataTypes.UUID, allowNull: true },
     user_id: { type: DataTypes.UUID, allowNull: false },
     },
     {

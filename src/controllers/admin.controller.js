@@ -194,6 +194,8 @@ export async function approveDuelRequest(req, res) {
     scheduledDate: req.body.scheduledDate,
     ticketPrice: req.body.ticketPrice,
     allowsSponsorAds: req.body.allowsSponsorAds,
+    acceptsSponsors: req.body.acceptsSponsors,
+    sponsorSubmissionDeadline: req.body.sponsorSubmissionDeadline,
     adminId: req.user.id,
     adminName: req.user.email,
   });

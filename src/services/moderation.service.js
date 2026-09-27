@@ -2,12 +2,17 @@ import { QueryTypes } from 'sequelize';
 
 import { notifyUser } from '../jobs/notify.js';
 import { db } from '../models/index.js';
-import { emitToRoom, roomName } from '../realtime/bus.js';
+import { emitToRoom, getRoomSize, getRoomUserIds, roomName } from '../realtime/bus.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
+import { logger } from '../config/logger.js';
 
 import { logAdminAction } from './adminLog.service.js';
 import { getDisplayProfiles } from './user.service.js';
+import * as liveService from './live.service.js';
+import * as concertService from './concert.service.js';
+import * as duelService from './duel.service.js';
+import * as competitionService from './competition.service.js';
 
 /**
  * @file Moderation domain service — community safety.
@@ -44,13 +49,114 @@ export async function createReport(kind, reporterId, input) {
   const targetId = input[def.targetKey];
   if (!targetId) throw ApiError.badRequest('VALIDATION_ERROR', { details: { field: def.targetKey } });
 
-  return db[def.model].create({
+  // `kind === 'live'` is the generic table shared by live/concert/duel — `event_type` (from the
+  // client's `streamType`) is what actually tells them apart. `kind === 'competition'` always IS
+  // a competition (its own dedicated table), so the event type is the kind itself.
+  const eventType = kind === 'live' ? (input.streamType || 'live') : kind;
+
+  const row = await db[def.model].create({
     [def.reporterCol]: reporterId,
     [def.targetCol]: targetId,
+    ...(kind === 'live' ? { event_type: eventType } : {}),
     reason: input.reason,
     details: input.details ?? null,
     status: 'pending',
   });
+
+  // Alerte admin + décision automatique éventuelle — best-effort, ne doit jamais faire échouer
+  // la réponse au signaleur si une notif ou un comptage échoue.
+  void handleNewReport(eventType, targetId, input.reason).catch((err) => {
+    logger.warn({ err: err?.message, eventType, targetId }, 'report: post-processing failed');
+  });
+
+  return row;
+}
+
+/** Libellés d'affichage pour la notification admin. */
+const EVENT_TYPE_LABELS = { live: 'un live', concert: 'un concert', duel: 'un duel', competition: 'une compétition' };
+/** Chemin web (relatif) vers l'événement, pour le lien dans la notification. */
+function eventDeepLink(eventType, eventId) {
+  if (eventType === 'live') return `/live/${eventId}`;
+  if (eventType === 'concert') return `/concert/${eventId}/live`;
+  if (eventType === 'duel') return `/duel/${eventId}`;
+  if (eventType === 'competition') return `/competition/${eventId}/live`;
+  return '/admin';
+}
+
+/**
+ * Post-traitement d'un signalement fraîchement créé : alerte tous les admins (in-app + push +
+ * email, avec un lien direct vers l'événement) puis vérifie si le seuil de signalements
+ * (`live_report_config`) est atteint pour déclencher l'arrêt automatique — CÔTÉ SERVEUR, donc
+ * appliqué de façon identique quel que soit le client d'où vient le signalement (web ou mobile),
+ * contrairement à l'ancien minuteur purement client (un seul onglet web, jamais sur mobile).
+ * @param {'live'|'concert'|'duel'|'competition'} eventType
+ * @param {string} eventId
+ * @param {string} reason
+ */
+async function handleNewReport(eventType, eventId, reason) {
+  const admins = await db.UserRole.findAll({ where: { role: 'admin' }, attributes: ['user_id'], raw: true }).catch(() => []);
+  await Promise.allSettled(
+    admins.map((a) =>
+      notifyUser({
+        userId: a.user_id,
+        type: 'live_report',
+        title: '⚠️ Signalement reçu',
+        message: `${EVENT_TYPE_LABELS[eventType] || 'un événement'} a été signalé (motif : ${reason}).`,
+        data: { event_type: eventType, event_id: eventId, link: eventDeepLink(eventType, eventId) },
+        email: true,
+        push: true,
+      }),
+    ),
+  );
+
+  await maybeAutoStop(eventType, eventId);
+}
+
+/** Compte les signalements en attente pour CET événement précis (pas tous types confondus). */
+async function countPendingReports(eventType, eventId) {
+  if (eventType === 'competition') {
+    return db.CompetitionReport.count({ where: { competition_id: eventId, status: 'pending' } });
+  }
+  return db.LiveReport.count({ where: { live_id: eventId, event_type: eventType, status: 'pending' } });
+}
+
+/**
+ * Arrête automatiquement l'événement une fois le seuil de `live_report_config` atteint (comptage
+ * ET décision entièrement serveur — voir {@link handleNewReport}). Réutilise directement les
+ * fonctions de mise à jour de statut de chaque domaine (avec `roles: ['admin']`, qu'elles
+ * acceptent déjà toutes pour un accès staff) pour garantir EXACTEMENT le même comportement
+ * (diffusion Socket.IO, clôture d'enregistrement…) qu'un arrêt manuel par un admin.
+ */
+async function maybeAutoStop(eventType, eventId) {
+  const row = await db.PlatformSetting.findByPk('live_report_config', { raw: true }).catch(() => null);
+  const cfg = row?.value || {};
+  const enabledKey = `enabled_${eventType}`;
+  if (cfg[enabledKey] === false) return;
+  const viewerThreshold = Number(cfg.viewer_threshold ?? 5);
+  const stopPercentage = Number(cfg.stop_percentage ?? 75);
+
+  const viewerCount = getRoomSize('/live', roomName(eventType, eventId));
+  if (viewerCount < viewerThreshold) return;
+
+  const reportCount = await countPendingReports(eventType, eventId);
+  const percentage = (reportCount / Math.max(1, viewerCount)) * 100;
+  if (percentage < stopPercentage) return;
+
+  const SYSTEM_ACTOR = { id: 'system', email: 'system@dualmusic' };
+  try {
+    if (eventType === 'live') {
+      await liveService.updateLiveStatus(eventId, SYSTEM_ACTOR.id, ['admin'], 'ended');
+    } else if (eventType === 'concert') {
+      await concertService.updateArtistConcert(eventId, SYSTEM_ACTOR.id, ['admin'], { status: 'ended' });
+    } else if (eventType === 'duel') {
+      await duelService.updateDuel(eventId, SYSTEM_ACTOR, ['admin'], { status: 'ended' });
+    } else if (eventType === 'competition') {
+      await competitionService.updateCompetition(eventId, SYSTEM_ACTOR, ['admin'], { status: 'cancelled' });
+    }
+  } catch (err) {
+    // Déjà terminé/annulé, ou introuvable — pas une vraie erreur de modération.
+    logger.info({ err: err?.message, eventType, eventId }, 'auto-stop: no-op (already ended or not found)');
+  }
 }
 
 /**
@@ -124,12 +230,158 @@ export async function aggregateAccountReports() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Event moderation — host + up to 2 appointed viewer-moderators              */
+/* -------------------------------------------------------------------------- */
+
+/** Primary host per event type: artist for live/concert, manager for duel/competition. */
+const EVENT_HOST_LOOKUP = {
+  live: { model: db.ArtistLive, hostField: 'artist_id' },
+  concert: { model: db.ArtistConcert, hostField: 'artist_id' },
+  duel: { model: db.Duel, hostField: 'manager_id' },
+  competition: { model: db.Competition, hostField: 'manager_id' },
+};
+
+/**
+ * Is `userId` the primary host (artist/manager) of this event? `false` for an
+ * unknown event or event type.
+ * @param {'live'|'concert'|'duel'|'competition'} eventType
+ * @param {string} eventId
+ * @param {string} userId
+ * @returns {Promise<boolean>}
+ */
+async function isEventHost(eventType, eventId, userId) {
+  const def = EVENT_HOST_LOOKUP[eventType];
+  if (!def) return false;
+  const row = await def.model.findByPk(eventId, { attributes: [def.hostField], raw: true }).catch(() => null);
+  return !!row && row[def.hostField] === userId;
+}
+
+/**
+ * May `actor` moderate (ban, hide messages) this event? True for the primary
+ * host, a platform admin/moderator, or a viewer the host has appointed via
+ * {@link appointModerator}. Does NOT grant the chat on/off toggle — that stays
+ * host-only (enforced in each domain service's own update function).
+ * @param {'live'|'concert'|'duel'|'competition'} eventType
+ * @param {string} eventId
+ * @param {{ id: string }} actor
+ * @param {string[]} actorRoles
+ * @returns {Promise<boolean>}
+ */
+export async function canModerateEvent(eventType, eventId, actor, actorRoles) {
+  if (actorRoles.includes('admin') || actorRoles.includes('moderator')) return true;
+  if (await isEventHost(eventType, eventId, actor.id)) return true;
+  const count = await db.EventModerator.count({ where: { event_type: eventType, event_id: eventId, user_id: actor.id } });
+  return count > 0;
+}
+
+/** Throws FORBIDDEN unless `actor` is this event's primary host (or admin). */
+async function assertEventHost(eventType, eventId, actor, actorRoles) {
+  if (actorRoles.includes('admin')) return;
+  if (!(await isEventHost(eventType, eventId, actor.id))) throw ApiError.forbidden('FORBIDDEN');
+}
+
+/** Max viewer-moderators a host may appoint per event. */
+const MAX_EVENT_MODERATORS = 2;
+
+/**
+ * Lists the users currently connected to an event's room (host only) — the
+ * pool the host picks appointed moderators from. Excludes the host themself.
+ * @param {'live'|'concert'|'duel'|'competition'} eventType
+ * @param {string} eventId
+ * @param {{ id: string }} actor
+ * @param {string[]} actorRoles
+ * @returns {Promise<object[]>} Hydrated display profiles.
+ * @throws {ApiError} 403 if `actor` isn't the host/admin.
+ */
+export async function listCurrentViewers(eventType, eventId, actor, actorRoles) {
+  await assertEventHost(eventType, eventId, actor, actorRoles);
+  const ids = getRoomUserIds('/live', roomName(eventType, eventId)).filter((id) => id !== actor.id);
+  return getDisplayProfiles(ids);
+}
+
+/**
+ * Appoints a viewer as this event's moderator (host only, capped at
+ * {@link MAX_EVENT_MODERATORS}). Notifies the appointee and broadcasts so
+ * their client immediately unlocks moderation controls (ban button, etc.).
+ * @param {'live'|'concert'|'duel'|'competition'} eventType
+ * @param {string} eventId
+ * @param {{ id: string }} actor
+ * @param {string[]} actorRoles
+ * @param {string} targetUserId
+ * @returns {Promise<object>}
+ * @throws {ApiError} 403 not host · 400 appointing self · 409 already a moderator / limit reached.
+ */
+export async function appointModerator(eventType, eventId, actor, actorRoles, targetUserId) {
+  await assertEventHost(eventType, eventId, actor, actorRoles);
+  if (targetUserId === actor.id) throw ApiError.badRequest('BAD_REQUEST');
+  const existing = await db.EventModerator.findAll({ where: { event_type: eventType, event_id: eventId }, raw: true });
+  if (existing.some((m) => m.user_id === targetUserId)) throw ApiError.conflict('ALREADY_MODERATOR');
+  if (existing.length >= MAX_EVENT_MODERATORS) throw ApiError.conflict('MODERATOR_LIMIT_REACHED');
+
+  const row = await db.EventModerator.create({
+    event_type: eventType,
+    event_id: eventId,
+    user_id: targetUserId,
+    appointed_by: actor.id,
+  });
+  emitToRoom('/live', roomName(eventType, eventId), 'moderator:appointed', {
+    event_type: eventType, event_id: eventId, user_id: targetUserId,
+  });
+  void notifyUser({
+    userId: targetUserId,
+    type: 'event_moderator',
+    title: 'Vous êtes maintenant modérateur',
+    message: "L'hôte vous a désigné pour l'aider à modérer ce direct.",
+    data: { event_type: eventType, event_id: eventId },
+  }).catch(() => {});
+  return row;
+}
+
+/**
+ * Revokes an appointed moderator (host only).
+ * @param {'live'|'concert'|'duel'|'competition'} eventType
+ * @param {string} eventId
+ * @param {{ id: string }} actor
+ * @param {string[]} actorRoles
+ * @param {string} targetUserId
+ * @returns {Promise<{ removed: boolean }>}
+ * @throws {ApiError} 403 if `actor` isn't the host/admin.
+ */
+export async function revokeModerator(eventType, eventId, actor, actorRoles, targetUserId) {
+  await assertEventHost(eventType, eventId, actor, actorRoles);
+  const deleted = await db.EventModerator.destroy({ where: { event_type: eventType, event_id: eventId, user_id: targetUserId } });
+  if (deleted > 0) {
+    emitToRoom('/live', roomName(eventType, eventId), 'moderator:revoked', {
+      event_type: eventType, event_id: eventId, user_id: targetUserId,
+    });
+  }
+  return { removed: deleted > 0 };
+}
+
+/**
+ * Lists an event's appointed moderators, hydrated with display profiles —
+ * public (any viewer may see who else can moderate, e.g. a badge in chat).
+ * @param {'live'|'concert'|'duel'|'competition'} eventType
+ * @param {string} eventId
+ * @returns {Promise<object[]>}
+ */
+export async function listEventModerators(eventType, eventId) {
+  const rows = await db.EventModerator.findAll({ where: { event_type: eventType, event_id: eventId }, raw: true });
+  const profiles = await getDisplayProfiles(rows.map((r) => r.user_id));
+  const byId = new Map(profiles.map((p) => [p.id, p]));
+  return rows.map((r) => ({ ...r, user: byId.get(r.user_id) || null }));
+}
+
+/* -------------------------------------------------------------------------- */
 /* Bans — per-event                                                           */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Bans a user from a single stream (duel/live/concert/competition). Broadcasts
- * the ban so the client can force-disconnect the target immediately.
+ * Bans a user from a single stream (duel/live/concert/competition). Host,
+ * appointed moderator or platform admin/moderator only (see
+ * {@link canModerateEvent}) — NOT any artist/manager, contrary to what the
+ * route's role gate alone would allow. Broadcasts the ban so the client can
+ * force-disconnect the target immediately.
  *
  * @param {object} params
  * @param {string} params.streamId
@@ -137,9 +389,13 @@ export async function aggregateAccountReports() {
  * @param {string} params.bannedUserId
  * @param {string} params.bannedBy
  * @param {string} [params.reason]
+ * @param {{ id: string }} params.actor
+ * @param {string[]} params.actorRoles
  * @returns {Promise<object>}
+ * @throws {ApiError} 403 if `actor` may not moderate this event.
  */
-export async function banFromStream({ streamId, streamType, bannedUserId, bannedBy, reason }) {
+export async function banFromStream({ streamId, streamType, bannedUserId, bannedBy, reason, actor, actorRoles }) {
+  if (!(await canModerateEvent(streamType, streamId, actor, actorRoles))) throw ApiError.forbidden('FORBIDDEN');
   const ban = await db.StreamBan.create({
     stream_id: streamId,
     stream_type: streamType,
@@ -155,12 +411,18 @@ export async function banFromStream({ streamId, streamType, bannedUserId, banned
 }
 
 /**
- * Lifts a stream ban. Only the moderator who set it (or an admin, enforced at
- * the route layer) may lift it.
+ * Lifts a stream ban. Host, appointed moderator or platform admin/moderator
+ * of the banned event only (see {@link canModerateEvent}).
  * @param {string} id
+ * @param {{ id: string }} actor
+ * @param {string[]} actorRoles
  * @returns {Promise<{ removed: boolean }>}
+ * @throws {ApiError} 403 if `actor` may not moderate this event.
  */
-export async function liftStreamBan(id) {
+export async function liftStreamBan(id, actor, actorRoles) {
+  const ban = await db.StreamBan.findByPk(id, { raw: true });
+  if (!ban) return { removed: false };
+  if (!(await canModerateEvent(ban.stream_type, ban.stream_id, actor, actorRoles))) throw ApiError.forbidden('FORBIDDEN');
   const deleted = await db.StreamBan.destroy({ where: { id } });
   return { removed: deleted > 0 };
 }
@@ -202,15 +464,20 @@ export async function listCompetitionBans(competitionId) {
 }
 
 /**
- * Bans a candidate/viewer from a specific competition.
+ * Bans a candidate/viewer from a specific competition. Host (manager),
+ * appointed moderator or platform admin/moderator only (see {@link canModerateEvent}).
  * @param {object} params
  * @param {string} params.competitionId
  * @param {string} params.bannedUserId
  * @param {string} params.bannedBy
  * @param {string} [params.reason]
+ * @param {{ id: string }} params.actor
+ * @param {string[]} params.actorRoles
  * @returns {Promise<object>}
+ * @throws {ApiError} 403 if `actor` may not moderate this competition.
  */
-export async function banFromCompetition({ competitionId, bannedUserId, bannedBy, reason }) {
+export async function banFromCompetition({ competitionId, bannedUserId, bannedBy, reason, actor, actorRoles }) {
+  if (!(await canModerateEvent('competition', competitionId, actor, actorRoles))) throw ApiError.forbidden('FORBIDDEN');
   const ban = await db.CompetitionBan.create({
     competition_id: competitionId,
     banned_user_id: bannedUserId,
@@ -225,11 +492,18 @@ export async function banFromCompetition({ competitionId, bannedUserId, bannedBy
 }
 
 /**
- * Lifts a competition ban.
+ * Lifts a competition ban. Host (manager), appointed moderator or platform
+ * admin/moderator of the banned competition only.
  * @param {string} id
+ * @param {{ id: string }} actor
+ * @param {string[]} actorRoles
  * @returns {Promise<{ removed: boolean }>}
+ * @throws {ApiError} 403 if `actor` may not moderate this competition.
  */
-export async function liftCompetitionBan(id) {
+export async function liftCompetitionBan(id, actor, actorRoles) {
+  const ban = await db.CompetitionBan.findByPk(id, { raw: true });
+  if (!ban) return { removed: false };
+  if (!(await canModerateEvent('competition', ban.competition_id, actor, actorRoles))) throw ApiError.forbidden('FORBIDDEN');
   const deleted = await db.CompetitionBan.destroy({ where: { id } });
   return { removed: deleted > 0 };
 }
@@ -385,6 +659,11 @@ export default {
   listReports,
   reviewReport,
   aggregateAccountReports,
+  canModerateEvent,
+  listCurrentViewers,
+  appointModerator,
+  revokeModerator,
+  listEventModerators,
   banFromStream,
   liftStreamBan,
   listStreamBans,

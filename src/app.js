@@ -67,8 +67,11 @@ export function createApp() {
   app.use(
     cors({
       origin(origin, cb) {
-        // Allow same-origin/non-browser (no Origin) and whitelisted origins.
-        if (!origin || config.corsOrigins.includes(origin)) return cb(null, true);
+        // Allow same-origin/non-browser (no Origin) and whitelisted origins. `webEgressBaseUrl`
+        // is included too : la page « vue enregistrement » headless (recording.service.js) tourne
+        // sur cette origine et appelle GET /recordings/live/:liveId/guests en direct — pas un
+        // navigateur utilisateur, mais un fetch() reste soumis à CORS comme n'importe quel autre.
+        if (!origin || config.corsOrigins.includes(origin) || origin === config.webEgressBaseUrl) return cb(null, true);
         return cb(new Error(`Origin not allowed by CORS: ${origin}`));
       },
       credentials: true,

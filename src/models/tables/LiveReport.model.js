@@ -15,6 +15,9 @@ export default function defineLiveReport(sequelize) {
     {
     created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
     details: { type: DataTypes.TEXT, allowNull: true },
+    // 'live' | 'concert' | 'duel' — `live_reports` est la table générique des 3 entités "direct" ;
+    // sans cette colonne, un signalement de concert/duel était indiscernable d'un vrai live.
+    event_type: { type: DataTypes.STRING, allowNull: false, defaultValue: 'live' },
     id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4, allowNull: false },
     live_id: { type: DataTypes.UUID, allowNull: false },
     reason: { type: DataTypes.TEXT, allowNull: false },

@@ -69,6 +69,12 @@ export const s3Driver = {
     await s3.send(new DeleteObjectCommand({ Bucket: config.s3.bucket, Key: key }));
   },
 
+  /** Server-side upload (e.g. the ffmpeg-concatenated recording output) — no client involved. */
+  async putObject(key, body, contentType) {
+    const s3 = getS3();
+    await s3.send(new PutObjectCommand({ Bucket: config.s3.bucket, Key: key, Body: body, ContentType: contentType }));
+  },
+
   publicUrl: (key) => publicUrlFor(key),
 
   publicBaseUrl: () => config.s3.publicBaseUrl || `${config.s3.endpoint}/${config.s3.bucket}`,

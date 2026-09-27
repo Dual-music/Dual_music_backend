@@ -1,0 +1,39 @@
+# ============================================================================
+# Configuration LiveKit — DÉVELOPPEMENT LOCAL (réseau LAN). Ne PAS utiliser en prod.
+# Le mobile et le web se connectent à ws://<IP-LAN-DU-PC>:7880 (signalisation)
+# et échangent le média sur le port UDP 7882.
+# ============================================================================
+
+# Port de signalisation WebSocket (ce que le client "voit" en premier).
+port: 7880
+
+rtc:
+  # Fallback TCP pour le média (réseaux qui bloquent l'UDP).
+  tcp_port: 7881
+  # Média en UDP sur UN SEUL port (mode "mux") → simple à publier dans Docker.
+  udp_port: 7882
+  # Réseau LAN privé : pas de détection d'IP publique. L'IP annoncée aux clients
+  # est fournie par --node-ip dans docker-compose (l'IP LAN de ce PC).
+  use_external_ip: false
+
+# Clés API. Le secret DOIT faire au moins 32 caractères.
+# ⚠️ Clé de DÉVELOPPEMENT — ne pas réutiliser en production.
+keys:
+  devkey: dmlocaldevsecret0123456789abcdefghijABCD
+
+# Redis : indispensable pour l'ENREGISTREMENT (Egress). LiveKit y dépose les jobs
+# d'egress que le worker `egress` récupère. `redis` = nom du service docker-compose.
+redis:
+  address: redis:6379
+
+# Webhook : LiveKit notifie le backend de la fin d'un egress (egress_ended) → le replay
+# est créé immédiatement (sinon, il est rattrapé plus tard par le job de réconciliation).
+# `host.docker.internal` = le PC hôte vu depuis le conteneur (Docker Desktop Windows),
+# où tourne le backend Node sur le port 4000. La signature est vérifiée avec `api_key`.
+webhook:
+  api_key: devkey
+  urls:
+    - http://host.docker.internal:4000/webhooks/livekit
+
+logging:
+  level: info

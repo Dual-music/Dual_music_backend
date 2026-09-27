@@ -30,7 +30,7 @@ function matchBytes(buf, bytes) {
 /**
  * Detects the concrete file type from a buffer's magic bytes.
  * @param {Buffer} buf - At least the first ~16 bytes of the file.
- * @returns {{ type: string, group: 'image'|'video'|'pdf' } | null} `null` if unrecognized.
+ * @returns {{ type: string, group: 'image'|'video'|'pdf'|'audio' } | null} `null` if unrecognized.
  */
 export function detectFileType(buf) {
   if (!buf || buf.length < 4) return null;
@@ -45,6 +45,17 @@ export function detectFileType(buf) {
   // Documents
   if (matchAscii(buf, 0, '%PDF')) return { type: 'application/pdf', group: 'pdf' };
 
+  // Audio — checked BEFORE the generic MP4 container signature below, since an M4A audio
+  // file shares the exact same `ftyp` box at offset 4 (only the brand that follows differs:
+  // "M4A " for audio vs. "isom"/"mp42"/... for video) and would otherwise be misdetected.
+  if (matchAscii(buf, 0, 'ID3')) return { type: 'audio/mpeg', group: 'audio' };
+  // MP3 frame sync (no ID3 tag): 0xFFEx/0xFFFx with the MPEG-audio bits set.
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0 && (buf[1] & 0x06) !== 0x00) return { type: 'audio/mpeg', group: 'audio' };
+  if (matchAscii(buf, 0, 'RIFF') && matchAscii(buf, 8, 'WAVE')) return { type: 'audio/wav', group: 'audio' };
+  if (matchAscii(buf, 0, 'OggS')) return { type: 'audio/ogg', group: 'audio' };
+  if (matchBytes(buf, [0x66, 0x4c, 0x61, 0x43])) return { type: 'audio/flac', group: 'audio' };
+  if (matchAscii(buf, 4, 'ftypM4A')) return { type: 'audio/mp4', group: 'audio' };
+
   // Video / containers
   if (matchBytes(buf, [0x1a, 0x45, 0xdf, 0xa3])) return { type: 'video/webm', group: 'video' };
   if (matchAscii(buf, 4, 'ftyp')) return { type: 'video/mp4', group: 'video' };
@@ -56,7 +67,7 @@ export function detectFileType(buf) {
 /**
  * Returns the MIME group of a buffer, or `null`.
  * @param {Buffer} buf
- * @returns {'image'|'video'|'pdf'|null}
+ * @returns {'image'|'video'|'pdf'|'audio'|null}
  */
 export function detectMimeGroup(buf) {
   return detectFileType(buf)?.group ?? null;

@@ -14,7 +14,7 @@ import { sendSuccess } from '../utils/apiResponse.js';
  * | --- | --- | --- | --- |
  * | GET | / | public | gift catalog |
  * | GET | /inventory | Bearer | caller's owned gifts |
- * | GET | /top-donor | public | ?duelId= or ?liveId= |
+ * | GET | /top-donor | public | ?duelId= or ?liveId= or ?concertId= |
  * | POST | / | admin | create a virtual gift |
  * | PATCH | /:id | admin | update a virtual gift |
  * | DELETE | /:id | admin | delete a virtual gift |
@@ -50,7 +50,10 @@ giftRouter.get('/inventory', authenticate(), async (req, res) =>
 );
 
 giftRouter.get('/top-donor', async (req, res) =>
-  sendSuccess(res, await giftService.getTopDonor({ duelId: req.query.duelId, liveId: req.query.liveId })),
+  sendSuccess(
+    res,
+    await giftService.getTopDonor({ duelId: req.query.duelId, liveId: req.query.liveId, concertId: req.query.concertId }),
+  ),
 );
 
 // --- Admin CRUD ---

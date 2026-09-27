@@ -13,12 +13,18 @@ export default function defineDuel(sequelize) {
   return sequelize.define(
     'Duel',
     {
+    accepts_sponsors: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     allows_sponsor_ads: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     artist1_id: { type: DataTypes.UUID, allowNull: false },
     artist2_id: { type: DataTypes.UUID, allowNull: false },
+    chat_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     created_at: { type: DataTypes.DATE, allowNull: true, defaultValue: DataTypes.NOW },
     current_timer_ends_at: { type: DataTypes.DATE, allowNull: true },
     current_timer_target_id: { type: DataTypes.UUID, allowNull: true },
+    // Lien vers la `DuelRequest` d'origine (nul pour les duels créés autrement) — permet à
+    // `approveDuelRequest` de retrouver LE duel de la demande de façon fiable, plutôt que de
+    // deviner via la paire d'artistes (ambigu si un même duo a plusieurs demandes dans le temps).
+    duel_request_id: { type: DataTypes.UUID, allowNull: true, unique: true },
     ended_at: { type: DataTypes.DATE, allowNull: true },
     id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4, allowNull: false },
     manager_id: { type: DataTypes.UUID, allowNull: true },

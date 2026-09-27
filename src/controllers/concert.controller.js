@@ -90,6 +90,16 @@ export async function purchaseDedication(req, res) {
   return sendSuccess(res, result, { status: 201 });
 }
 
+/** POST /concerts/dedications/:id/accept — charges the fan now, notifies + broadcasts. */
+export async function acceptDedication(req, res) {
+  return sendSuccess(res, await concertService.acceptDedication(req.params.id, req.user.id, req.roles || []));
+}
+
+/** POST /concerts/dedications/:id/reject — no charge, notifies + broadcasts. */
+export async function rejectDedication(req, res) {
+  return sendSuccess(res, await concertService.rejectDedication(req.params.id, req.user.id, req.roles || []));
+}
+
 /** POST /concerts/dedications/:id/deliver */
 export async function deliverDedication(req, res) {
   return sendSuccess(res, await concertService.deliverDedication(req.params.id, req.user.id, req.roles || []));
@@ -133,6 +143,8 @@ export default {
   removeArtist,
   reviewArtist,
   purchaseDedication,
+  acceptDedication,
+  rejectDedication,
   deliverDedication,
   listDedications,
   myDedications,

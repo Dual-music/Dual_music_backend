@@ -110,8 +110,11 @@ export async function createRequest(requesterId, input) {
 
   const event = await db[def.model].findByPk(input.eventId, { raw: true });
   if (!event) throw ApiError.notFound('EVENT_NOT_FOUND');
-  // Le manager peut refuser les sponsors sur une compétition → aucune demande possible.
-  if (input.eventType === 'competition' && event.accepts_sponsors === false) {
+  // Le manager (compétition) ou l'admin (duel) peut refuser les sponsors → aucune demande
+  // possible. Générique : `accepts_sponsors` n'existe que sur les types qui le supportent
+  // (competition, duel) — `undefined === false` est toujours faux pour les autres, donc ce
+  // contrôle ne les affecte pas.
+  if (event.accepts_sponsors === false) {
     throw ApiError.badRequest('SPONSOR_NOT_ACCEPTED', { details: { eventType: input.eventType } });
   }
   const deadline = event[def.deadline];
@@ -150,6 +153,22 @@ export async function payRequest(userId, requestId) {
     if (out.code === 'request_not_found') throw ApiError.notFound('NOT_FOUND');
     if (out.code === 'forbidden') throw ApiError.forbidden('FORBIDDEN');
     throw ApiError.badRequest('SPONSOR_PAYMENT_FAILED', { details: { code: out.code } });
+  }
+  // `already_paid` (rejeu idempotent) ne doit pas re-notifier les admins à chaque tentative.
+  if (out.code === 'ok') {
+    const admins = await db.UserRole.findAll({ where: { role: 'admin' }, attributes: ['user_id'], raw: true }).catch(() => []);
+    await Promise.allSettled(
+      admins.map((a) =>
+        notifyUser({
+          userId: a.user_id,
+          type: 'sponsor',
+          title: '💰 Paiement sponsor reçu',
+          message: 'Un demandeur a réglé son sponsoring — prêt pour validation finale.',
+          data: { request_id: requestId },
+          email: true,
+        }),
+      ),
+    );
   }
   return { paid: true, code: out.code };
 }
@@ -193,16 +212,24 @@ export async function listMyRequests(userId) {
 export async function reviewRequest({ id, reviewerId, status, rejectedReason }) {
   const request = await db.SponsorRequest.findByPk(id);
   if (!request) throw ApiError.notFound('NOT_FOUND');
+  // Idempotent replay : un second clic (double-clic, requête relancée après un affichage
+  // ambigu du succès) rejouait TOUT l'effet de bord — notamment une nouvelle ligne
+  // `sponsor_ad_videos` à chaque appel, d'où des pubs dupliquées à l'identique dans la liste
+  // de diffusion (signalé). Déjà tranché = on renvoie l'état actuel sans rien refaire.
+  if (request.status === 'approved' || request.status === 'rejected') return request;
 
   request.status = status;
   request.reviewed_by = reviewerId;
   if (status === 'approved') {
     request.approved_at = new Date();
     await request.save();
+    // Titre affiché dans la liste « Lancer une pub » : le nom du sponsor plutôt qu'un
+    // libellé générique quand la demande n'a pas de description (cas courant, signalé).
+    const requesterProfile = await db.Profile.findByPk(request.requester_id, { attributes: ['full_name'], raw: true }).catch(() => null);
     await db.SponsorAdVideo.create({
       event_id: request.event_id,
       event_type: request.event_type,
-      title: request.description || 'Sponsor',
+      title: request.description || requesterProfile?.full_name || 'Sponsor',
       video_url: request.media_url,
       duration_seconds: request.media_duration_seconds,
       uploaded_by: request.requester_id,
@@ -452,16 +479,19 @@ export async function setRequestPrice({ id, priceCredits, adminId }) {
 export async function approveReuseMedia({ id, mediaUrl, durationSeconds, adminId }) {
   const request = await db.SponsorRequest.findByPk(id);
   if (!request) throw ApiError.notFound('NOT_FOUND');
+  // Idempotent replay — voir la même garde dans `reviewRequest` (évite les pubs dupliquées).
+  if (request.status === 'approved' || request.status === 'rejected') return request;
   request.status = 'approved';
   request.reviewed_by = adminId;
   request.approved_at = new Date();
   request.media_url = mediaUrl;
   request.media_duration_seconds = durationSeconds;
   await request.save();
+  const requesterProfile = await db.Profile.findByPk(request.requester_id, { attributes: ['full_name'], raw: true }).catch(() => null);
   await db.SponsorAdVideo.create({
     event_id: request.event_id,
     event_type: request.event_type,
-    title: request.description || 'Sponsor',
+    title: request.description || requesterProfile?.full_name || 'Sponsor',
     video_url: mediaUrl,
     duration_seconds: durationSeconds,
     uploaded_by: request.requester_id,

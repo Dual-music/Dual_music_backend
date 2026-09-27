@@ -15,7 +15,9 @@ export const createAccountReport = {
   body: Joi.object({ reportedUserId: uuid.required(), reason, details }),
 };
 export const createLiveReport = {
-  body: Joi.object({ liveId: uuid.required(), reason, details }),
+  // `streamType` distingue les 3 entités "direct" partageant cette table générique (`live_reports`)
+  // — sans elle, un signalement de concert/duel était indiscernable d'un signalement de live.
+  body: Joi.object({ liveId: uuid.required(), streamType: Joi.string().valid('live', 'concert', 'duel').default('live'), reason, details }),
 };
 export const createCompetitionReport = {
   body: Joi.object({ competitionId: uuid.required(), reason, details }),
@@ -78,6 +80,16 @@ export const createWarning = {
   body: Joi.object({ userId: uuid.required(), message: Joi.string().min(3).max(1000).required() }),
 };
 
+const eventType = Joi.string().valid('live', 'concert', 'duel', 'competition').required();
+export const eventParam = { params: Joi.object({ type: eventType, id: uuid.required() }) };
+export const appointModerator = {
+  params: Joi.object({ type: eventType, id: uuid.required() }),
+  body: Joi.object({ userId: uuid.required() }),
+};
+export const revokeModerator = {
+  params: Joi.object({ type: eventType, id: uuid.required(), userId: uuid.required() }),
+};
+
 export default {
   kindParam,
   createAccountReport,
@@ -94,4 +106,7 @@ export default {
   platformBan,
   platformUnban,
   createWarning,
+  eventParam,
+  appointModerator,
+  revokeModerator,
 };

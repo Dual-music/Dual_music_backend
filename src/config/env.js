@@ -20,6 +20,14 @@ const schema = Joi.object({
   PORT: Joi.number().port().default(4000),
   API_BASE_URL: Joi.string().uri().default('http://localhost:4000'),
   CORS_ORIGINS: Joi.string().default('http://localhost:5173'),
+  // URL du web app telle que JOIGNABLE DEPUIS LE CONTENEUR EGRESS (pas forcément la même que
+  // CORS_ORIGINS, qui vise le navigateur de l'utilisateur) — sert à `startWebEgress` (recording.
+  // service.js) pour l'enregistrement composite des duels (Chrome headless ouvre une page
+  // "vue enregistrement" côté web). En prod, l'URL publique HTTPS suffit. En dev local, le
+  // conteneur Docker `egress` ne peut PAS joindre `localhost` de la machine hôte — utiliser
+  // `http://host.docker.internal:<port du serveur dev>` (Docker Desktop Win/Mac) ou l'IP LAN
+  // de la machine.
+  WEB_EGRESS_BASE_URL: Joi.string().uri().allow('').default(''),
   LOG_LEVEL: Joi.string()
     .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace')
     .default('info'),
@@ -176,6 +184,9 @@ export const config = Object.freeze({
   corsOrigins: env.CORS_ORIGINS.split(',')
     .map((o) => o.trim())
     .filter(Boolean),
+  // Repli : premier CORS origin (marche en prod ; en dev local, `docker.compose`/`.env` doit le
+  // surcharger avec une URL joignable depuis le conteneur egress — voir le commentaire du schéma).
+  webEgressBaseUrl: env.WEB_EGRESS_BASE_URL || env.CORS_ORIGINS.split(',')[0]?.trim() || '',
   logLevel: env.LOG_LEVEL,
 
   db: {

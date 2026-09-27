@@ -1,5 +1,6 @@
 import { logger } from '../config/logger.js';
 import * as payments from '../services/payments/payments.service.js';
+import * as payout from '../services/payments/payout.service.js';
 import { constructEvent } from '../services/payments/providers/stripe.client.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 
@@ -64,19 +65,46 @@ export async function cinetpayTransactions(req, res) {
   return sendSuccess(res, await payments.listCinetpayTransactions({ limit: req.query.limit }));
 }
 
-/** GET /payments/cinetpay/verify?merchantId= (admin) */
+/**
+ * GET /payments/cinetpay/verify?merchantId=&settle= (admin)
+ * `settle=true` applique le statut constaté (crédit, clôture ou remboursement).
+ */
 export async function verifyCinetpay(req, res) {
-  return sendSuccess(res, await payments.verifyCinetpayTransaction(req.query.merchantId));
+  const settle = req.query.settle === 'true' || req.query.settle === true;
+  return sendSuccess(res, await payments.verifyCinetpayTransaction(req.query.merchantId, { settle }));
 }
 
-/** POST /payments/cinetpay/webhook (public) */
+/** GET /payments/cinetpay/balances (admin) — soldes marchands par pays. */
+export async function cinetpayBalances(_req, res) {
+  return sendSuccess(res, await payout.getCinetpayBalances());
+}
+
+/**
+ * POST /payments/cinetpay/webhook (public) — notification d'encaissement.
+ *
+ * Acquitte systématiquement en 200, y compris sur exception interne : un statut
+ * d'erreur déclencherait une boucle de relance côté provider alors que le
+ * règlement est idempotent et rattrapable par la réconciliation. Seul un
+ * `notify_token` invalide répond 403 — cette requête ne vient pas de CinetPay.
+ */
 export async function cinetpayWebhook(req, res) {
   try {
-    await payments.handleCinetpayWebhook(req.body);
+    const out = await payments.handleCinetpayWebhook(req.body, req.headers['x-token']);
+    if (out?.reason === 'bad_token') return res.status(403).send('FORBIDDEN');
   } catch (err) {
     logger.error({ err: err.message }, 'CinetPay webhook error');
   }
-  // Always ack so the provider stops retrying; settlement is idempotent.
+  return res.status(200).send('OK');
+}
+
+/** POST /payments/cinetpay/payout/webhook (public) — notification de transfert. */
+export async function cinetpayPayoutWebhook(req, res) {
+  try {
+    const out = await payout.handleCinetpayPayoutWebhook(req.body, req.headers['x-token']);
+    if (out?.reason === 'bad_token') return res.status(403).send('FORBIDDEN');
+  } catch (err) {
+    logger.error({ err: err.message }, 'CinetPay payout webhook error');
+  }
   return res.status(200).send('OK');
 }
 
@@ -105,7 +133,9 @@ export default {
   transactionByMerchant,
   cinetpayTransactions,
   verifyCinetpay,
+  cinetpayBalances,
   cinetpayWebhook,
+  cinetpayPayoutWebhook,
   monerooWebhook,
   stripeWebhook,
 };

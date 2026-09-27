@@ -13,6 +13,23 @@ import { getDisplayProfiles } from './user.service.js';
 const liveRoom = (id) => roomName('live', id);
 
 /**
+ * MySQL/mysql2 returns TINYINT(1) BOOLEAN columns as raw `0`/`1` numbers on `raw: true` queries
+ * (Sequelize's boolean casting only applies to hydrated model instances, not raw rows). Clients
+ * with strictly-typed JSON decoders (the Android app's kotlinx.serialization `Boolean` fields, in
+ * particular) reject a JSON `1`/`0` for a boolean field outright — the whole row fails to parse,
+ * which silently emptied the ENTIRE lives list client-side (caught by a `runCatching` fallback).
+ * Coerce to real booleans before sending.
+ */
+function castLiveBooleans(row) {
+  return {
+    ...row,
+    allow_guests: !!row.allow_guests,
+    allows_dedications: !!row.allows_dedications,
+    is_replay_available: !!row.is_replay_available,
+  };
+}
+
+/**
  * @file Lives domain service — spontaneous artist live streams with chat, gifts
  * and likes (no ticketing). Reproduces `artist_lives`, `live_likes` and
  * `live_join_requests`, including the `increment_live_likes` RPC.
@@ -22,16 +39,21 @@ const liveRoom = (id) => roomName('live', id);
 
 /**
  * Lists lives (active first), paginated, with artist display profiles.
- * @param {object} query - `status?`, pagination.
+ * @param {object} query - `status?`, `artistId?`, pagination.
  * @returns {Promise<{ rows: object[], pagination: object }>}
  */
 export async function listLives(query) {
   const { limit, where, order, mode, offset } = parsePagination(query);
   if (query.status) where.status = query.status;
+  // Sans ce filtre, `GET /lives?artistId=<uid>` ignorait silencieusement `artistId` et renvoyait
+  // TOUS les lives (tous artistes confondus) : le live d'un artiste A s'affichait comme actif chez
+  // un artiste B, qui se retrouvait bloqué pour démarrer le sien (web + mobile lisent tous deux le
+  // premier live `status:'live'` de la liste, en supposant — à tort — qu'elle est déjà filtrée).
+  if (query.artistId) where.artist_id = query.artistId;
   const rows = await db.ArtistLive.findAll({ where, order, limit, offset, raw: true });
   const profiles = await getDisplayProfiles(rows.map((r) => r.artist_id));
   const byId = new Map(profiles.map((p) => [p.id, p]));
-  const hydrated = rows.map((r) => ({ ...r, artist: byId.get(r.artist_id) || null }));
+  const hydrated = rows.map((r) => ({ ...castLiveBooleans(r), artist: byId.get(r.artist_id) || null }));
   return { rows: hydrated, pagination: buildPaginationMeta({ mode, rows, limit, page: query.page }) };
 }
 
@@ -49,7 +71,7 @@ export async function getLive(id) {
     db.LiveLike.findByPk(id),
   ]);
   return {
-    ...live,
+    ...castLiveBooleans(live),
     artist: artist ? { ...artist, stage_name: artistProfile?.stage_name ?? null } : null,
     likes: likes ? Number(likes.likes_count) : 0,
   };
@@ -91,7 +113,8 @@ export async function getLiveTitlesByIds(ids) {
 /**
  * Starts a live for an artist.
  * @param {string} artistId
- * @param {{ title?: string, roomId?: string, streamUrl?: string }} input
+ * @param {{ title?: string, roomId?: string, streamUrl?: string, allowsDedications?: boolean,
+ *   dedicationMinPriceCredits?: number|null, allowGuests?: boolean }} input
  * @returns {Promise<object>}
  */
 export async function startLive(artistId, input) {
@@ -102,6 +125,9 @@ export async function startLive(artistId, input) {
     stream_url: input.streamUrl ?? null,
     status: 'live',
     started_at: new Date(),
+    allows_dedications: input.allowsDedications ?? true,
+    dedication_min_price_credits: input.dedicationMinPriceCredits ?? null,
+    allow_guests: input.allowGuests ?? true,
   });
   // Fan-out best-effort : prévient les abonnés de l'artiste qu'un live démarre.
   void notifyFollowersLiveStarted(artistId, live).catch(() => {});
@@ -180,6 +206,40 @@ export async function updateLiveStatus(id, actorId, roles = [], status) {
 }
 
 /**
+ * Updates a live's settings mid-stream (host or admin/moderator) — dedications on/off
+ * (+ optional per-live minimum price override) and guest join-requests on/off. Only the
+ * fields actually provided are changed. Broadcasts so open clients react immediately (e.g.
+ * hide the "raise hand" button / dedication sheet for `allowGuests`/`allowsDedications`).
+ * @param {string} id
+ * @param {string} actorId
+ * @param {string[]} roles
+ * @param {{ allowsDedications?: boolean, dedicationMinPriceCredits?: number|null, allowGuests?: boolean, chatEnabled?: boolean }} input
+ * @returns {Promise<object>}
+ * @throws {ApiError} 404 · 403.
+ */
+export async function updateLiveSettings(id, actorId, roles = [], input = {}) {
+  const live = await db.ArtistLive.findByPk(id);
+  if (!live) throw ApiError.notFound('NOT_FOUND');
+  const isStaff = roles.includes('admin') || roles.includes('moderator');
+  if (live.artist_id !== actorId && !isStaff) throw ApiError.forbidden('FORBIDDEN');
+  if (input.allowsDedications !== undefined) live.allows_dedications = input.allowsDedications;
+  if (input.dedicationMinPriceCredits !== undefined) live.dedication_min_price_credits = input.dedicationMinPriceCredits;
+  if (input.allowGuests !== undefined) live.allow_guests = input.allowGuests;
+  // Coupe le chat pour tout le monde (voir `chat.service.js#postMessage`) — hôte uniquement,
+  // pas délégable à un modérateur désigné (voir `moderation.service.js#canModerateEvent`).
+  if (input.chatEnabled !== undefined) live.chat_enabled = input.chatEnabled;
+  await live.save();
+  emitToRoom('/live', liveRoom(id), 'settings', {
+    live_id: id,
+    allows_dedications: live.allows_dedications,
+    dedication_min_price_credits: live.dedication_min_price_credits,
+    allow_guests: live.allow_guests,
+    chat_enabled: live.chat_enabled,
+  });
+  return live;
+}
+
+/**
  * Atomically increments a live's like counter (mirrors `increment_live_likes`).
  * @param {string} liveId
  * @returns {Promise<{ likes: number }>}
@@ -219,6 +279,9 @@ export async function getLikes(liveId) {
  * @returns {Promise<object>}
  */
 export async function requestJoin(liveId, userId) {
+  const live = await db.ArtistLive.findByPk(liveId, { attributes: ['allow_guests'], raw: true });
+  if (!live) throw ApiError.notFound('NOT_FOUND');
+  if (!live.allow_guests) throw ApiError.conflict('GUESTS_DISABLED');
   const [row] = await db.LiveJoinRequest.findOrCreate({
     where: { live_id: liveId, user_id: userId, status: 'pending' },
     defaults: { live_id: liveId, user_id: userId, status: 'pending', requested_at: new Date() },
@@ -238,7 +301,12 @@ export async function requestJoin(liveId, userId) {
 export async function listJoinRequests(liveId, status) {
   const where = { live_id: liveId };
   if (status) where.status = status;
-  return db.LiveJoinRequest.findAll({ where, order: [['requested_at', 'DESC']], raw: true });
+  const rows = await db.LiveJoinRequest.findAll({ where, order: [['requested_at', 'DESC']], raw: true });
+  // Hydrate `user` (display profile) — sans ça les clients (rail invités, vignettes de la scène
+  // multi-caméra) retombent tous sur un nom générique faute de savoir QUI est chaque invité.
+  const profiles = await getDisplayProfiles(rows.map((r) => r.user_id));
+  const byId = new Map(profiles.map((p) => [p.id, p]));
+  return rows.map((r) => ({ ...r, user: byId.get(r.user_id) || null }));
 }
 
 /**
@@ -289,4 +357,4 @@ export async function cancelJoinRequest(requestId, actorId, roles = []) {
   return req;
 }
 
-export default { listLives, getLive, getReportSummary, getLiveTitlesByIds, startLive, endLive, updateLiveStatus, incrementLikes, getLikes, requestJoin, listJoinRequests, respondJoin, cancelJoinRequest };
+export default { listLives, getLive, getReportSummary, getLiveTitlesByIds, startLive, endLive, updateLiveStatus, updateLiveSettings, incrementLikes, getLikes, requestJoin, listJoinRequests, respondJoin, cancelJoinRequest };

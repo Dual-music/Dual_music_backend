@@ -79,6 +79,7 @@ const updateSchema = {
     rewardAmount: Joi.number().min(0),
     rewardDescription: Joi.string().max(2000).allow('', null),
     status: Joi.string().valid('draft', 'published', 'live', 'finished', 'cancelled'),
+    chatEnabled: Joi.boolean(),
     ...venueFields,
   }).min(1),
 };
@@ -98,6 +99,14 @@ const applySchema = {
 const reviewSchema = {
   params: Joi.object({ id: uuid.required() }),
   body: Joi.object({ approve: Joi.boolean().required(), rejectionReason: Joi.string().max(1000).allow('', null) }),
+};
+const juryVotesSchema = {
+  params: Joi.object({ id: uuid.required() }),
+  body: Joi.object({ juryVotes: Joi.number().integer().min(0).required() }),
+};
+const addCandidateSchema = {
+  params: Joi.object({ id: uuid.required() }),
+  body: Joi.object({ artistId: uuid.required(), pitch: Joi.string().max(2000).allow('', null) }),
 };
 const performerSchema = {
   params: Joi.object({ id: uuid.required() }),
@@ -130,6 +139,11 @@ competitionRouter.get('/mine', authenticate(), requireRole('manager', 'admin'), 
 competitionRouter.get('/candidacies/mine', authenticate(), competitionController.myCandidacies);
 competitionRouter.get('/tickets/mine', authenticate(), competitionController.myTickets);
 competitionRouter.post('/candidates/:id/review', authenticate(), validate(reviewSchema), competitionController.reviewCandidate);
+competitionRouter.delete('/candidates/:id', authenticate(), requireRole('manager', 'admin'), validate(idParam), competitionController.removeCandidate);
+// Badge « Candidats » du menu manager : total en attente, toutes compétitions confondues —
+// une route dédiée plutôt qu'un aller-retour par compétition à chaque ouverture du profil.
+competitionRouter.get('/candidates/pending-count/mine', authenticate(), requireRole('manager', 'admin'), competitionController.pendingCandidatesCount);
+competitionRouter.post('/candidates/:id/jury-votes', authenticate(), requireRole('manager', 'admin'), validate(juryVotesSchema), competitionController.juryVotes);
 
 competitionRouter.get('/:id', optionalAuth(), validate(idParam), competitionController.getOne);
 competitionRouter.patch('/:id', authenticate(), requireRole('manager', 'admin'), validate(updateSchema), competitionController.update);
@@ -137,6 +151,10 @@ competitionRouter.get('/:id/my-ticket', authenticate(), validate(idParam), compe
 competitionRouter.get('/:id/candidates', validate(idParam), competitionController.candidates);
 competitionRouter.post('/:id/publish', authenticate(), validate(idParam), competitionController.publish);
 competitionRouter.post('/:id/apply', authenticate(), requireRole('artist', 'admin'), validate(applySchema), competitionController.apply);
+// Ajout direct d'un candidat par le manager (walk-in, compétition en présentiel notamment) —
+// contourne candidature+validation ; verrouillé par le réglage admin `manual_candidates_config`
+// (désactivé par défaut, voir competition.service.js#addCandidateManually).
+competitionRouter.post('/:id/candidates/manual', authenticate(), requireRole('manager', 'admin'), validate(addCandidateSchema), competitionController.addCandidateManually);
 competitionRouter.post('/:id/performer', authenticate(), validate(performerSchema), competitionController.setPerformer);
 competitionRouter.post('/:id/focus', authenticate(), validate(focusSchema), competitionController.setFocus);
 competitionRouter.post('/:id/finalize', authenticate(), validate(idParam), competitionController.finalize);

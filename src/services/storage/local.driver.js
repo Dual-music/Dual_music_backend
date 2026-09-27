@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
@@ -143,6 +143,13 @@ export const localDriver = {
 
   async delete(key) {
     await rm(pathFor(key), { force: true });
+  },
+
+  /** Server-side upload (e.g. the ffmpeg-concatenated recording output) — no client involved. */
+  async putObject(key, body) {
+    const dest = pathFor(key);
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFile(dest, body);
   },
 
   publicUrl(key) {

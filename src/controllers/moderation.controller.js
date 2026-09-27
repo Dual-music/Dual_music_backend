@@ -49,7 +49,9 @@ export async function reviewReport(req, res) {
 
 /** POST /moderation/stream-bans */
 export async function banStream(req, res) {
-  const row = await moderationService.banFromStream({ ...req.body, bannedBy: req.user.id });
+  const row = await moderationService.banFromStream({
+    ...req.body, bannedBy: req.user.id, actor: req.user, actorRoles: req.roles,
+  });
   return sendSuccess(res, row, { status: 201 });
 }
 
@@ -61,7 +63,7 @@ export async function listStreamBans(req, res) {
 
 /** DELETE /moderation/stream-bans/:id */
 export async function liftStreamBan(req, res) {
-  return sendSuccess(res, await moderationService.liftStreamBan(req.params.id));
+  return sendSuccess(res, await moderationService.liftStreamBan(req.params.id, req.user, req.roles));
 }
 
 /** GET /moderation/competition-bans */
@@ -71,13 +73,36 @@ export async function listCompetitionBans(req, res) {
 
 /** POST /moderation/competition-bans */
 export async function banCompetition(req, res) {
-  const row = await moderationService.banFromCompetition({ ...req.body, bannedBy: req.user.id });
+  const row = await moderationService.banFromCompetition({
+    ...req.body, bannedBy: req.user.id, actor: req.user, actorRoles: req.roles,
+  });
   return sendSuccess(res, row, { status: 201 });
 }
 
 /** DELETE /moderation/competition-bans/:id */
 export async function liftCompetitionBan(req, res) {
-  return sendSuccess(res, await moderationService.liftCompetitionBan(req.params.id));
+  return sendSuccess(res, await moderationService.liftCompetitionBan(req.params.id, req.user, req.roles));
+}
+
+/** GET /moderation/events/:type/:id/viewers (host only) */
+export async function listCurrentViewers(req, res) {
+  return sendSuccess(res, await moderationService.listCurrentViewers(req.params.type, req.params.id, req.user, req.roles));
+}
+
+/** GET /moderation/events/:type/:id/moderators */
+export async function listEventModerators(req, res) {
+  return sendSuccess(res, await moderationService.listEventModerators(req.params.type, req.params.id));
+}
+
+/** POST /moderation/events/:type/:id/moderators (host only) */
+export async function appointModerator(req, res) {
+  const row = await moderationService.appointModerator(req.params.type, req.params.id, req.user, req.roles, req.body.userId);
+  return sendSuccess(res, row, { status: 201 });
+}
+
+/** DELETE /moderation/events/:type/:id/moderators/:userId (host only) */
+export async function revokeModerator(req, res) {
+  return sendSuccess(res, await moderationService.revokeModerator(req.params.type, req.params.id, req.user, req.roles, req.params.userId));
 }
 
 /** POST /moderation/platform-bans */
@@ -142,6 +167,10 @@ export default {
   listCompetitionBans,
   banCompetition,
   liftCompetitionBan,
+  listCurrentViewers,
+  listEventModerators,
+  appointModerator,
+  revokeModerator,
   banPlatform,
   unbanPlatform,
   listPlatformBans,

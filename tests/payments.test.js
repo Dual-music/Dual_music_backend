@@ -16,9 +16,6 @@ vi.mock('../src/services/payments/providers/stripe.client.js', () => ({
   createCreditsCheckout: vi.fn(),
   createSubscriptionCheckout: vi.fn(),
 }));
-vi.mock('../src/services/payments/providers/apple.client.js', () => ({
-  fetchVerifiedTransaction: vi.fn(),
-}));
 vi.mock('../src/utils/procedures.js', () => ({ callProcedure: vi.fn(), default: {} }));
 
 import { db } from '../src/models/index.js';
@@ -26,7 +23,6 @@ import * as payments from '../src/services/payments/payments.service.js';
 import { computeCreditsForRecharge } from '../src/services/payments/pricing.service.js';
 import * as cinetpay from '../src/services/payments/providers/cinetpay.client.js';
 import * as moneroo from '../src/services/payments/providers/moneroo.client.js';
-import * as apple from '../src/services/payments/providers/apple.client.js';
 import * as stripe from '../src/services/payments/providers/stripe.client.js';
 import { callProcedure } from '../src/utils/procedures.js';
 
@@ -55,6 +51,7 @@ beforeAll(async () => {
     is_active: true,
     country_name: "Côte d'Ivoire",
     phone_prefix: '+225',
+    operators: [{ code: 'OM_CI', label: 'Orange Money' }, { code: 'WAVE_CI', label: 'Wave' }],
     secret_key_name: 'CINETPAY_CI_KEY',
     secret_password_name: 'CINETPAY_CI_PWD',
   });
@@ -111,6 +108,25 @@ describe('initCinetpay', () => {
     await expect(payments.initCinetpay({ userId: UID, amount: 1, countryCode: 'CI' })).rejects.toMatchObject({
       code: 'AMOUNT_INVALID',
     });
+  });
+
+  it('rejects an operator that is not whitelisted for the country', async () => {
+    await expect(
+      payments.initCinetpay({ userId: UID, amount: 6000, countryCode: 'CI', paymentMethod: 'MTN_ZZ' }),
+    ).rejects.toMatchObject({ code: 'CINETPAY_OPERATOR_INVALID' });
+    expect(cinetpay.initPayment).not.toHaveBeenCalled();
+  });
+
+  it('accepts a whitelisted operator and forwards it to the provider', async () => {
+    cinetpay.initPayment.mockResolvedValue({ paymentUrl: 'https://pay/wave', raw: {} });
+    await payments.initCinetpay({ userId: UID, amount: 6000, countryCode: 'CI', paymentMethod: 'WAVE_CI' });
+    expect(cinetpay.initPayment).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: 'WAVE_CI' }));
+  });
+
+  it('defaults to the country first operator when none is provided', async () => {
+    cinetpay.initPayment.mockResolvedValue({ paymentUrl: 'https://pay/def', raw: {} });
+    await payments.initCinetpay({ userId: UID, amount: 6000, countryCode: 'CI' });
+    expect(cinetpay.initPayment).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: 'OM_CI' }));
   });
 });
 
@@ -173,33 +189,77 @@ describe('handleCinetpayWebhook', () => {
     });
   }
 
+  /** Corps de notification valide : identifiant + jeton attendu. */
+  const notif = (id, extra = {}) => ({ cpm_trans_id: id, cpm_custom: `tok_${id}`, ...extra });
+
   it('rejects a body without a merchant id', async () => {
     await expect(payments.handleCinetpayWebhook({})).rejects.toMatchObject({ statusCode: 400 });
   });
 
-  it('404s when the transaction is unknown', async () => {
-    await expect(payments.handleCinetpayWebhook({ cpm_trans_id: 'nope' })).rejects.toMatchObject({ statusCode: 404 });
+  it('acknowledges an unknown transaction instead of erroring (no provider retry loop)', async () => {
+    await expect(payments.handleCinetpayWebhook({ cpm_trans_id: 'nope' })).resolves.toMatchObject({
+      ok: true,
+      outcome: 'unknown',
+    });
   });
 
-  it('returns ok:false when the provider status is not accepted', async () => {
+  it('refuses a notification whose notify_token does not match', async () => {
+    await seedTx('cp_forged');
+    await expect(
+      payments.handleCinetpayWebhook({ cpm_trans_id: 'cp_forged', cpm_custom: 'wrong' }),
+    ).resolves.toMatchObject({ ok: false, reason: 'bad_token' });
+    // Aucun appel sortant ne doit avoir été déclenché par une notification forgée.
+    expect(cinetpay.checkPayment).not.toHaveBeenCalled();
+  });
+
+  it('leaves the transaction pending when the provider status is not final', async () => {
     await seedTx('cp_reject');
-    cinetpay.checkPayment.mockResolvedValue({ accepted: false, status: 'REFUSED', raw: {} });
-    await expect(payments.handleCinetpayWebhook({ cpm_trans_id: 'cp_reject' })).resolves.toEqual({ ok: false });
+    cinetpay.checkPayment.mockResolvedValue({ accepted: false, insufficient: false, status: 'PENDING', code: '', raw: {} });
+    await expect(payments.handleCinetpayWebhook(notif('cp_reject'))).resolves.toMatchObject({
+      ok: true,
+      outcome: 'pending',
+    });
+    const tx = await db.CinetpayTransaction.findOne({ where: { merchant_transaction_id: 'cp_reject' } });
+    expect(tx.status).toBe('pending');
+  });
+
+  it('closes the transaction as `insufficient` on a payer-balance failure', async () => {
+    await seedTx('cp_insuf');
+    cinetpay.checkPayment.mockResolvedValue({ accepted: false, insufficient: true, status: 'REFUSED', code: '627', raw: {} });
+    vi.mocked(callProcedure).mockResolvedValue({ success: true, code: 'ok' });
+    await expect(payments.handleCinetpayWebhook(notif('cp_insuf'))).resolves.toMatchObject({
+      ok: true,
+      outcome: 'insufficient',
+    });
+    expect(callProcedure).toHaveBeenCalledWith(
+      'cinetpay_fail_payin',
+      ['cp_insuf', 'insufficient', expect.stringContaining('627')],
+      ['success', 'code'],
+    );
   });
 
   it('credits the wallet when accepted and the procedure succeeds', async () => {
     await seedTx('cp_ok');
-    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', raw: {} });
+    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', code: '00', raw: {} });
     vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: false, balance: 1000 });
-    await expect(payments.handleCinetpayWebhook({ transaction_id: 'cp_ok' })).resolves.toEqual({ ok: true });
+    await expect(payments.handleCinetpayWebhook(notif('cp_ok'))).resolves.toMatchObject({ ok: true, outcome: 'credited' });
     expect(callProcedure).toHaveBeenCalledWith('cinetpay_credit_wallet', ['cp_ok', 1000], ['ok', 'already', 'error', 'balance']);
+  });
+
+  it('accepts the notify_token from the x-token header', async () => {
+    await seedTx('cp_hdr');
+    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', code: '00', raw: {} });
+    vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: false });
+    await expect(
+      payments.handleCinetpayWebhook({ cpm_trans_id: 'cp_hdr' }, 'tok_cp_hdr'),
+    ).resolves.toMatchObject({ ok: true, outcome: 'credited' });
   });
 
   it('throws when the credit procedure reports failure', async () => {
     await seedTx('cp_fail');
-    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', raw: {} });
+    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', code: '00', raw: {} });
     vi.mocked(callProcedure).mockResolvedValue({ ok: false, error: 'tx_not_found' });
-    await expect(payments.handleCinetpayWebhook({ cpm_trans_id: 'cp_fail' })).rejects.toMatchObject({
+    await expect(payments.handleCinetpayWebhook(notif('cp_fail'))).rejects.toMatchObject({
       code: 'PAYMENT_PROVIDER_ERROR',
     });
   });
@@ -360,11 +420,24 @@ describe('read/ledger helpers', () => {
     expect(rows.find((r) => r.merchant_transaction_id === 'cp_read_1')).toBeTruthy();
   });
 
-  it('verifyCinetpayTransaction passes through the provider check', async () => {
-    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED' });
-    await expect(payments.verifyCinetpayTransaction('cp_read_1')).resolves.toEqual({
-      merchantTransactionId: 'cp_read_1', accepted: true, status: 'ACCEPTED',
+  it('verifyCinetpayTransaction observes without settling by default', async () => {
+    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', code: '00', raw: {} });
+    vi.mocked(callProcedure).mockClear();
+    await expect(payments.verifyCinetpayTransaction('cp_read_1')).resolves.toMatchObject({
+      merchantTransactionId: 'cp_read_1', kind: 'payin', accepted: true, status: 'ACCEPTED', settled: null,
     });
+    expect(callProcedure).not.toHaveBeenCalled();
+  });
+
+  it('verifyCinetpayTransaction credits when explicitly asked to settle', async () => {
+    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', code: '00', raw: {} });
+    vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: false });
+    await expect(payments.verifyCinetpayTransaction('cp_read_1', { settle: true })).resolves.toMatchObject({
+      settled: 'credited',
+    });
+    expect(callProcedure).toHaveBeenCalledWith(
+      'cinetpay_credit_wallet', ['cp_read_1', 100], ['ok', 'already', 'error', 'balance'],
+    );
   });
 });
 
@@ -374,10 +447,13 @@ describe('webhook + dispatch branch edges', () => {
       merchant_transaction_id: 'cp_rep', notify_token: 'nr', user_id: UID, amount: 100, currency: 'XOF',
       country_code: 'CI', payment_method: 'ALL', phone_number: '', kind: 'payin', status: 'pending', credits_amount: 10,
     });
-    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', raw: {} });
+    cinetpay.checkPayment.mockResolvedValue({ accepted: true, status: 'ACCEPTED', code: '00', raw: {} });
     vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: false, balance: 100 });
-    await payments.handleCinetpayWebhook({ transaction_id: 'cp_rep' }); // transaction_id fallback branch
-    await expect(payments.handleCinetpayWebhook({ cpm_trans_id: 'cp_rep' })).resolves.toMatchObject({ ok: true, replayed: true });
+    // `transaction_id` : branche de repli sur l'identifiant marchand.
+    await payments.handleCinetpayWebhook({ transaction_id: 'cp_rep', notify_token: 'nr' });
+    await expect(
+      payments.handleCinetpayWebhook({ cpm_trans_id: 'cp_rep', cpm_custom: 'nr' }),
+    ).resolves.toMatchObject({ ok: true, replayed: true });
   });
 
   it('moneroo webhook is idempotent on replay', async () => {
@@ -451,70 +527,5 @@ describe('computeCreditsForRecharge — config fallbacks', () => {
     expect(q.creditValueUsd).toBe(0.01);
     expect(q.feePct).toBe(0);
     expect(q.credits).toBe(10000);
-  });
-});
-
-describe('verifyAppleCredits', () => {
-  const TX_ID = 'apple_tx_1';
-  const PRODUCT_ID = 'com.dualmusic.app.credits.tier1'; // 99 credits, see appleIAPProducts.js
-
-  it('credits the wallet for a verified, unrevoked transaction with a numeric price', async () => {
-    apple.fetchVerifiedTransaction.mockResolvedValue({
-      transactionId: TX_ID,
-      productId: PRODUCT_ID,
-      price: 990, // milliunits → 0.99
-      currency: 'USD',
-      revocationDate: null,
-    });
-    vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: false });
-    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).resolves.toEqual({
-      credits: 99,
-      already: false,
-    });
-    expect(callProcedure).toHaveBeenCalledWith('credit_wallet_apple', [UID, TX_ID, 99, 0.99, 'USD'], ['ok', 'already']);
-  });
-
-  it('falls back to a 0 paid amount and USD currency when price/currency are absent', async () => {
-    apple.fetchVerifiedTransaction.mockResolvedValue({ transactionId: TX_ID, productId: PRODUCT_ID });
-    vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: false });
-    await payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID });
-    expect(callProcedure).toHaveBeenCalledWith('credit_wallet_apple', [UID, TX_ID, 99, 0, 'USD'], ['ok', 'already']);
-  });
-
-  it('rejects a refunded/revoked transaction without crediting', async () => {
-    apple.fetchVerifiedTransaction.mockResolvedValue({
-      transactionId: TX_ID,
-      productId: PRODUCT_ID,
-      revocationDate: 1700000000000,
-    });
-    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).rejects.toMatchObject({
-      code: 'APPLE_TRANSACTION_REVOKED',
-    });
-    expect(callProcedure).not.toHaveBeenCalled();
-  });
-
-  it('rejects a product id absent from the catalog', async () => {
-    apple.fetchVerifiedTransaction.mockResolvedValue({ transactionId: TX_ID, productId: 'com.unknown.product' });
-    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).rejects.toMatchObject({
-      code: 'APPLE_PRODUCT_UNKNOWN',
-    });
-    expect(callProcedure).not.toHaveBeenCalled();
-  });
-
-  it('reports already:true without a duplicate credit on a replayed transactionId', async () => {
-    apple.fetchVerifiedTransaction.mockResolvedValue({ transactionId: TX_ID, productId: PRODUCT_ID });
-    vi.mocked(callProcedure).mockResolvedValue({ ok: true, already: true });
-    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).resolves.toEqual({
-      credits: 99,
-      already: true,
-    });
-  });
-
-  it('throws when the credit procedure reports failure', async () => {
-    apple.fetchVerifiedTransaction.mockResolvedValue({ transactionId: TX_ID, productId: PRODUCT_ID });
-    vi.mocked(callProcedure).mockResolvedValue({ ok: false });
-    await expect(payments.verifyAppleCredits({ userId: UID, transactionId: TX_ID })).rejects.toMatchObject({
-      code: 'WALLET_CREDIT_FAILED',
-    });
   });
 });

@@ -105,8 +105,15 @@ export async function sendGift(userId, { giftId, toUserId, duelId = null, liveId
   );
   if (!out.success) throw errorFromCode(out.code);
   // Real-time leaderboard update (best-effort): use the gift's credit value.
-  // Also fetch name + image so the on-stage animation can show the ACTUAL gift (web + mobile).
-  const gift = await db.VirtualGift.findByPk(giftId, { attributes: ['price', 'name', 'image_url'], raw: true });
+  // Also fetch name + image so the on-stage animation can show the ACTUAL gift (web + mobile), and
+  // the SENDER's profile so that animation can show the donor's name too — mobile had no name in
+  // the payload at all (only `from_user_id`) and showed the gift with no attribution, unlike web
+  // which resolved it separately client-side (signalé). Resolving it once here, server-side, is
+  // both simpler for every client and avoids N clients each doing their own profile lookup.
+  const [gift, senderProfile] = await Promise.all([
+    db.VirtualGift.findByPk(giftId, { attributes: ['price', 'name', 'image_url'], raw: true }),
+    db.Profile.findByPk(userId, { attributes: ['full_name', 'avatar_url'], raw: true }),
+  ]);
   const value = Number(gift?.price ?? 0);
   void recordGift({ receiverId: toUserId, senderId: userId, value });
   // Notify the recipient so their transaction toast can fire.
@@ -120,9 +127,13 @@ export async function sendGift(userId, { giftId, toUserId, duelId = null, liveId
       value,
       gift_name: gift?.name ?? null,
       gift_image: gift?.image_url ?? null,
+      from_user_name: senderProfile?.full_name ?? null,
+      from_user_avatar: senderProfile?.avatar_url ?? null,
     });
   }
-  // Notification durable au destinataire (in-app + temps réel + push ; email opt-in).
+  // Notification durable au destinataire (in-app + temps réel ; email opt-in). Pas de push pour
+  // les cadeaux de concert : l'artiste voit déjà l'animation en direct au-dessus des commentaires,
+  // une notif push par-dessus faisait doublon (demande explicite, contrairement au duel/live).
   void notifyUser({
     userId: toUserId,
     type: 'gift_received',
@@ -130,7 +141,7 @@ export async function sendGift(userId, { giftId, toUserId, duelId = null, liveId
     message: `Vous avez reçu un cadeau (${value} crédits).`,
     data: { from_user_id: userId, value },
     email: true,
-    push: true,
+    push: ctx?.[0] !== 'concert',
   }).catch(() => {});
   return { success: true, transactionId: out.entity_id };
 }

@@ -82,29 +82,56 @@ export async function getInventory(userId) {
 }
 
 /**
- * Returns the top donor (by total gift value) for a duel or live.
- * Mirrors the frontend `get_top_donor` used by the TopDonorBubble.
+ * Returns the top donor (by total gift value — concert also folds in dedications,
+ * the only concert-attributable spend before `gift_transactions.concert_id` existed
+ * and still a legitimate form of donation) for a duel, live or concert.
+ * Mirrors the frontend `TopDonorBubble` / `TopDonor` shape (`user_id`, `full_name`,
+ * `avatar_url`, `total_amount`) — this endpoint previously returned `{ userId, total,
+ * author }`, which never matched what the component reads, so the bubble/marquee
+ * silently rendered nothing regardless of context.
  * @param {object} scope
  * @param {string} [scope.duelId]
  * @param {string} [scope.liveId]
- * @returns {Promise<{ userId: string, total: number, author: object } | null>}
+ * @param {string} [scope.concertId]
+ * @returns {Promise<{ user_id: string, full_name: string|null, avatar_url: string|null, total_amount: number, last_message: null } | null>}
  */
-export async function getTopDonor({ duelId = null, liveId = null }) {
-  const column = duelId ? 'duel_id' : 'live_id';
-  const value = duelId || liveId;
-  if (!value) return null;
-  const rows = await db.sequelize.query(
-    `SELECT gt.from_user_id AS userId, ROUND(SUM(vg.price), 2) AS total
-       FROM gift_transactions gt JOIN virtual_gifts vg ON vg.id = gt.gift_id
-      WHERE gt.${column} = :val
-      GROUP BY gt.from_user_id
-      ORDER BY total DESC
-      LIMIT 1`,
-    { replacements: { val: value }, type: QueryTypes.SELECT },
-  );
+export async function getTopDonor({ duelId = null, liveId = null, concertId = null }) {
+  let rows;
+  if (concertId) {
+    rows = await db.sequelize.query(
+      `SELECT uid AS userId, ROUND(SUM(amt), 2) AS total FROM (
+         SELECT gt.from_user_id AS uid, COALESCE(vg.price, 0) AS amt
+           FROM gift_transactions gt LEFT JOIN virtual_gifts vg ON vg.id = gt.gift_id
+          WHERE gt.concert_id = :val
+         UNION ALL
+         SELECT fan_id AS uid, price_credits AS amt FROM concert_dedications WHERE concert_id = :val
+       ) x
+       GROUP BY uid ORDER BY total DESC LIMIT 1`,
+      { replacements: { val: concertId }, type: QueryTypes.SELECT },
+    );
+  } else {
+    const column = duelId ? 'duel_id' : 'live_id';
+    const value = duelId || liveId;
+    if (!value) return null;
+    rows = await db.sequelize.query(
+      `SELECT gt.from_user_id AS userId, ROUND(SUM(vg.price), 2) AS total
+         FROM gift_transactions gt JOIN virtual_gifts vg ON vg.id = gt.gift_id
+        WHERE gt.${column} = :val
+        GROUP BY gt.from_user_id
+        ORDER BY total DESC
+        LIMIT 1`,
+      { replacements: { val: value }, type: QueryTypes.SELECT },
+    );
+  }
   if (!rows.length) return null;
   const [author] = await getDisplayProfiles([rows[0].userId]);
-  return { userId: rows[0].userId, total: Number(rows[0].total), author: author || null };
+  return {
+    user_id: rows[0].userId,
+    full_name: author?.full_name ?? null,
+    avatar_url: author?.avatar_url ?? null,
+    total_amount: Number(rows[0].total),
+    last_message: null,
+  };
 }
 
 export default { listGifts, getInventory, getTopDonor, createGift, updateGift, deleteGift };

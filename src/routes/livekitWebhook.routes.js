@@ -3,7 +3,6 @@ import { WebhookReceiver, EgressStatus } from 'livekit-server-sdk';
 
 import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import { db } from '../models/index.js';
 import { finalizeFromEgress } from '../services/recording.service.js';
 
 /**
@@ -31,13 +30,13 @@ livekitWebhookRouter.post('/', express.raw({ type: '*/*', limit: '256kb' }), asy
 
     if (event.egressInfo && (event.event === 'egress_ended' || event.event === 'egress_updated')) {
       const status = event.egressInfo.status;
-      if (status === EgressStatus.EGRESS_COMPLETE) {
+      // Un enregistrement peut être fait de PLUSIEURS segments (pause/reprise — l'egress
+      // LiveKit n'a pas de vraie pause) : COMPLETE/FAILED/ABORTED referme le SEGMENT concerné,
+      // pas forcément toute la session — `finalizeFromEgress` sait faire la distinction et ne
+      // déclenche le recollage final que si tous les segments sont clos. On ignore les autres
+      // statuts (mises à jour intermédiaires pendant un enregistrement encore en cours).
+      if (status === EgressStatus.EGRESS_COMPLETE || status === EgressStatus.EGRESS_FAILED || status === EgressStatus.EGRESS_ABORTED) {
         await finalizeFromEgress(event.egressInfo);
-      } else if (status === EgressStatus.EGRESS_FAILED || status === EgressStatus.EGRESS_ABORTED) {
-        await db.StreamRecording.update(
-          { status: 'failed', ended_at: new Date(), error: event.egressInfo.error || 'egress failed' },
-          { where: { egress_id: event.egressInfo.egressId } },
-        ).catch(() => {});
       }
     }
     res.status(200).end();

@@ -2,9 +2,28 @@ import { Server } from 'socket.io';
 
 import { config } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { db } from '../models/index.js';
 import { verifyToken } from '../utils/jwt.js';
 
 import { roomName, setIo } from './bus.js';
+
+/** Types dont la présence compte pour l'accès gratuit au replay (voir `replay.service.js`). */
+const ATTENDANCE_TYPES = new Set(['live', 'concert', 'duel', 'competition']);
+
+/**
+ * Enregistre (best-effort, upsert-safe) qu'un utilisateur AUTHENTIFIÉ a suivi ce direct — sert
+ * ensuite à lui accorder gratuitement le replay payant s'il en existe un (voir
+ * `replay.service.js#attendedSource`). Ignoré pour les spectateurs anonymes (aucun `userId`).
+ * @param {string|null} userId
+ * @param {string} type
+ * @param {string} id
+ */
+function recordAttendance(userId, type, id) {
+  if (!userId || !ATTENDANCE_TYPES.has(type)) return;
+  db.StreamAttendance.findOrCreate({ where: { user_id: userId, event_type: type, event_id: id } }).catch((err) => {
+    logger.warn({ err: err?.message, userId, type, id }, 'stream_attendance: record failed');
+  });
+}
 
 /**
  * @file Socket.IO realtime layer.
@@ -90,6 +109,9 @@ function wireRoomNamespace(nsp) {
         socket.join(room);
         joined.add(room);
         emitPresence(nsp, room);
+        // Uniquement `/live` (la room de visionnage réelle) — `/chat` s'y ajoute quasi toujours
+        // en parallèle, doublonner l'écriture n'apporterait rien (upsert-safe de toute façon).
+        if (nsp.name === '/live') recordAttendance(socket.userId, type, id);
       }
     });
     socket.on('leave', ({ type, id } = {}) => {

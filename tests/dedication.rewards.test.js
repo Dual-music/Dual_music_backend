@@ -22,7 +22,7 @@ beforeAll(async () => {
   await db.sequelize.query('PRAGMA foreign_keys = OFF');
   await db.PlatformSetting.create({ key: 'economic_config', value: { dedication: { min_price_credits: 10, platform_pct: 20 } } });
   const c = await db.ArtistConcert.create({
-    artist_id: ARTIST, title: 'Show', scheduled_date: new Date(), ticket_price: 0, status: 'published',
+    artist_id: ARTIST, title: 'Show', scheduled_date: new Date(), ticket_price: 0, status: 'upcoming',
     approval_status: 'approved', allows_dedications: true, allows_sponsor_ads: false,
   });
   concertId = c.id;
@@ -59,13 +59,17 @@ describe('concert dedications', () => {
   });
 
   it('rejects when dedications are disabled', async () => {
-    const c = await db.ArtistConcert.create({ artist_id: ARTIST, title: 'No', scheduled_date: new Date(), ticket_price: 0, status: 'published', approval_status: 'approved', allows_dedications: false, allows_sponsor_ads: false });
+    const c = await db.ArtistConcert.create({ artist_id: ARTIST, title: 'No', scheduled_date: new Date(), ticket_price: 0, status: 'upcoming', approval_status: 'approved', allows_dedications: false, allows_sponsor_ads: false });
     await expect(concert.purchaseDedication(FAN, { ...base(), concertId: c.id })).rejects.toMatchObject({ code: 'DEDICATIONS_DISABLED' });
   });
 
   it('maps insufficient balance from the procedure', async () => {
+    // The debit now happens on ACCEPT, not on request (see `purchaseDedication`'s docstring —
+    // a rejected request never touches a wallet) — `insufficient_balance` is thus only ever
+    // returned by `accept_concert_dedication_from_wallet`, mapped in `acceptDedication`.
+    const d = await db.ConcertDedication.create({ concert_id: concertId, concert_type: 'artist_concert', artist_id: ARTIST, fan_id: FAN, message: 'x', price_credits: 50, status: 'pending' });
     vi.mocked(callProcedure).mockResolvedValue({ success: false, code: 'insufficient_balance' });
-    await expect(concert.purchaseDedication(FAN, base())).rejects.toMatchObject({ code: 'WALLET_INSUFFICIENT' });
+    await expect(concert.acceptDedication(d.id, ARTIST, [])).rejects.toMatchObject({ code: 'WALLET_INSUFFICIENT' });
   });
 
   it('delivers a paid dedication (artist), rejects wrong state / non-owner', async () => {

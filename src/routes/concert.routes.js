@@ -44,6 +44,8 @@ const createArtistConcertSchema = {
     coverImageUrl: Joi.string().uri().max(2048).allow('', null),
     allowsDedications: Joi.boolean(),
     allowsSponsorAds: Joi.boolean(),
+    sponsorSubmissionDeadline: Joi.date().iso().allow(null),
+    dedicationSubmissionDeadline: Joi.date().iso().allow(null),
   }),
 };
 
@@ -58,9 +60,12 @@ const updateArtistConcertSchema = {
     coverImageUrl: Joi.string().uri().max(2048).allow('', null),
     allowsDedications: Joi.boolean(),
     allowsSponsorAds: Joi.boolean(),
+    sponsorSubmissionDeadline: Joi.date().iso().allow(null),
+    dedicationSubmissionDeadline: Joi.date().iso().allow(null),
     status: Joi.string().valid('upcoming', 'live', 'ended', 'cancelled'),
     recordingUrl: Joi.string().uri().max(2048).allow('', null),
     isReplayAvailable: Joi.boolean(),
+    chatEnabled: Joi.boolean(),
   }).min(1),
 };
 
@@ -100,6 +105,8 @@ concertRouter.post('/dedications', authenticate(), validate(dedicationSchema), i
 concertRouter.get('/dedications/me', authenticate(), concertController.myDedications);
 concertRouter.get('/dedications/artist/me', authenticate(), concertController.artistDedications);
 concertRouter.get('/dedications', authenticate(), validate(dedicationListSchema), concertController.listDedications);
+concertRouter.post('/dedications/:id/accept', authenticate(), validate(idParam), concertController.acceptDedication);
+concertRouter.post('/dedications/:id/reject', authenticate(), validate(idParam), concertController.rejectDedication);
 concertRouter.post('/dedications/:id/deliver', authenticate(), validate(idParam), concertController.deliverDedication);
 
 concertRouter.get('/:id/ticket-info', optionalAuth(), validate(idParam), concertController.ticketInfo);

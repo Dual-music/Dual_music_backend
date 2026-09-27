@@ -22,11 +22,17 @@ export default function defineCompetitionCandidate(sequelize) {
     id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4, allowNull: false },
     pitch: { type: DataTypes.STRING, allowNull: true },
     rejection_reason: { type: DataTypes.TEXT, allowNull: true },
+    // Posé quand des frais d'inscription réellement encaissés (`entry_fee_paid`) sont recrédités
+    // au retrait d'un candidat déjà approuvé — évite un double remboursement.
+    refunded_at: { type: DataTypes.DATE, allowNull: true },
     reviewed_at: { type: DataTypes.DATE, allowNull: true },
     reviewed_by: { type: DataTypes.UUID, allowNull: true },
     status: { type: DataTypes.STRING, allowNull: false },
     total_gifts_credits: { type: DataTypes.DECIMAL(18, 2), allowNull: false, defaultValue: 0 },
     total_votes: { type: DataTypes.DECIMAL(18, 2), allowNull: false, defaultValue: 0 },
+    // Voix cumulées d'un jury (hors ligne), saisies par le manager — additionnées aux votes
+    // payants + cadeaux dans le classement (voir competition.service.js).
+    jury_votes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
     video_demo_url: { type: DataTypes.STRING(2048), allowNull: true },
     },

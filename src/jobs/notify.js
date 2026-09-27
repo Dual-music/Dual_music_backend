@@ -126,6 +126,8 @@ const EMAIL_FLAG_BY_TYPE = {
   admin_report: 'email_system',
   duel_request: 'email_duels',
   dedication_received: 'email_concerts',
+  dedication_accepted: 'email_concerts',
+  dedication_rejected: 'email_concerts',
   dedication_delivered: 'email_concerts',
   reward: 'email_system',
   season_winner_announced: 'email_system',

@@ -67,7 +67,7 @@ export async function createComment(userId, input) {
     const parent = await db.Comment.findByPk(input.parentId, { attributes: ['id'] });
     if (!parent) throw ApiError.notFound('NOT_FOUND');
   }
-  return db.Comment.create({
+  const comment = await db.Comment.create({
     user_id: userId,
     content: sanitizeText(input.content, { maxLength: 4000 }),
     content_type: input.contentType,
@@ -75,6 +75,13 @@ export async function createComment(userId, input) {
     parent_id: input.parentId ?? null,
     likes_count: 0,
   });
+  // `lifestyle_videos.comments_count` est un cache dénormalisé (affiché sur les cartes de la
+  // liste sans requête supplémentaire) — jamais tenu à jour jusqu'ici, il restait bloqué à 0
+  // quel que soit le nombre réel de commentaires. Seul `lifestyle` a cette colonne.
+  if (input.contentType === 'lifestyle') {
+    void db.LifestyleVideo.increment('comments_count', { by: 1, where: { id: input.contentId } }).catch(() => {});
+  }
+  return comment;
 }
 
 /**
@@ -92,6 +99,9 @@ export async function deleteComment(id, userId, roles) {
   const isStaff = roles.includes('admin') || roles.includes('moderator');
   if (!isOwner && !isStaff) throw ApiError.forbidden('FORBIDDEN');
   const removed = await db.Comment.destroy({ where: { id } });
+  if (removed > 0 && comment.content_type === 'lifestyle') {
+    void db.LifestyleVideo.decrement('comments_count', { by: 1, where: { id: comment.content_id } }).catch(() => {});
+  }
   return { removed: removed > 0 };
 }
 
