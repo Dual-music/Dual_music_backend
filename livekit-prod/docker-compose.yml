@@ -1,0 +1,58 @@
+# LiveKit en PRODUCTION sur le VPS (Contabo) — serveur SFU auto-hébergé, public, chiffré.
+#
+# Pourquoi : `LIVEKIT_URL=ws://172.17.10.135:7880` (dossier livekit-local) est une adresse PRIVÉE
+# de réseau local : seuls les appareils connectés au même Wi-Fi que ce PC reçoivent l'audio/vidéo.
+# Tous les autres se connectent au backend… mais jamais au média. Ce dossier déploie LiveKit sur
+# le VPS, derrière un nom de domaine en WSS (obligatoire pour iOS et pour les navigateurs en HTTPS),
+# avec TURN intégré (réseaux mobiles / entreprises qui bloquent l'UDP).
+#
+# Prérequis : voir ../../docs/07-LIVEKIT-PRODUCTION-VPS.md (DNS, pare-feu, nginx, certificats).
+#   1. Copier .env.example → .env et renseigner les valeurs.
+#   2. docker compose up -d
+#   3. Dans le .env du backend : LIVEKIT_URL=wss://livekit.<domaine>  (+ mêmes clé/secret).
+
+services:
+  livekit:
+    image: livekit/livekit-server:v1.8
+    container_name: dm-livekit
+    restart: unless-stopped
+    # host network : indispensable pour que LiveKit annonce la vraie IP publique et ouvre la
+    # plage UDP sans publier 10 000 ports un par un dans Docker.
+    network_mode: host
+    command: --config /etc/livekit.yaml
+    environment:
+      # Clé/secret injectés dans la config via variables (voir livekit.yaml `keys:`).
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+      # Certificat Let's Encrypt du sous-domaine TURN (lecture seule). Renouvelé par certbot sur l'hôte.
+      - /etc/letsencrypt/live/${TURN_DOMAIN}/fullchain.pem:/etc/livekit/turn.crt:ro
+      - /etc/letsencrypt/live/${TURN_DOMAIN}/privkey.pem:/etc/livekit/turn.key:ro
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: dm-livekit-redis
+    restart: unless-stopped
+    # Réservé au réseau local du VPS (livekit + egress). Jamais exposé publiquement.
+    command: ["redis-server", "--bind", "127.0.0.1", "--save", "", "--appendonly", "no"]
+    network_mode: host
+
+  # Enregistrement des directs (replays). Optionnel : commenter ce service pour économiser
+  # CPU/RAM (Chrome headless) si LIVEKIT_EGRESS_ENABLED=false côté backend.
+  egress:
+    image: livekit/egress:v1.9
+    container_name: dm-livekit-egress
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
+    cap_add:
+      - CAP_SYS_ADMIN
+    shm_size: "1gb"
+    depends_on:
+      - redis
+      - livekit

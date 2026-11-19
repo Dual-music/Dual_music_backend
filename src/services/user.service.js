@@ -16,18 +16,51 @@ import { ApiError } from '../utils/ApiError.js';
  */
 
 /**
+ * Nom d'affichage de repli quand ni nom de scène ni nom complet ne sont renseignés.
+ * `full_name` est FACULTATIF à l'inscription (et souvent absent via Google/Apple) : sans ce
+ * repli, web et mobile affichaient le mot « Utilisateur » au-dessus des messages de chat.
+ * Ordre : préfixe d'e-mail → téléphone masqué → identifiant court. Jamais `null`.
+ * @param {{ id: string, email?: string|null, phone?: string|null }} p
+ * @returns {string}
+ */
+function fallbackDisplayName(p) {
+  const local = typeof p.email === 'string' ? p.email.split('@')[0].trim() : '';
+  if (local) return local.slice(0, 20);
+  const digits = typeof p.phone === 'string' ? p.phone.replace(/\D/g, '') : '';
+  if (digits.length >= 4) return `•••${digits.slice(-4)}`;
+  return `Fan ${String(p.id).replace(/-/g, '').slice(0, 4).toUpperCase()}`;
+}
+
+/**
  * Batch lookup of minimal public display info for a set of user ids.
  * Mirrors `supabase.rpc('get_display_profiles', { user_ids })`.
+ *
+ * `full_name` n'est **jamais `null`** (nom complet, sinon repli) pour que tous les clients
+ * existants (qui lisent `full_name`) affichent un vrai nom ; `display_name` = nom de scène →
+ * nom complet → repli, et `stage_name` reste disponible pour les écrans qui le distinguent.
  * @param {string[]} userIds
- * @returns {Promise<Array<{ id: string, full_name: string|null, avatar_url: string|null }>>}
+ * @returns {Promise<Array<{ id: string, full_name: string, display_name: string, stage_name: string|null, avatar_url: string|null }>>}
  */
 export async function getDisplayProfiles(userIds) {
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
   const unique = [...new Set(userIds)].slice(0, 500);
-  return db.Profile.findAll({
-    where: { id: { [Op.in]: unique } },
-    attributes: ['id', 'full_name', 'avatar_url'],
-    raw: true,
+  const [profiles, artists] = await Promise.all([
+    db.Profile.findAll({
+      where: { id: { [Op.in]: unique } },
+      attributes: ['id', 'full_name', 'avatar_url', 'email', 'phone'],
+      raw: true,
+    }),
+    db.ArtistProfile.findAll({
+      where: { user_id: { [Op.in]: unique } },
+      attributes: ['user_id', 'stage_name'],
+      raw: true,
+    }).catch(() => []),
+  ]);
+  const stageById = new Map(artists.map((a) => [a.user_id, a.stage_name?.trim() || null]));
+  return profiles.map((p) => {
+    const stage = stageById.get(p.id) ?? null;
+    const full = p.full_name?.trim() || fallbackDisplayName(p);
+    return { id: p.id, full_name: full, display_name: stage || full, stage_name: stage, avatar_url: p.avatar_url ?? null };
   });
 }
 

@@ -6,6 +6,7 @@ import { emitToRoom, roomName } from '../realtime/bus.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildPaginationMeta, parsePagination } from '../utils/pagination.js';
 
+import { setLiveGuestPublish } from './livekit.service.js';
 import { startRecording, stopRecording } from './recording.service.js';
 import { getDisplayProfiles } from './user.service.js';
 
@@ -325,6 +326,9 @@ export async function respondJoin(requestId, hostId, status) {
   if (status === 'accepted') req.accepted_at = new Date();
   if (status === 'ended') req.ended_at = new Date();
   await req.save();
+  // Room UNIQUE `live-<id>` : l'invité accepté obtient le droit de publier sans se reconnecter ;
+  // retiré/refusé, ses pistes sont coupées côté SFU immédiatement (best-effort, voir le service).
+  void setLiveGuestPublish(req.live_id, req.user_id, status === 'accepted');
   emitToRoom('/live', liveRoom(req.live_id), 'join:update', { live_id: req.live_id, request_id: req.id, status, user_id: req.user_id });
   return req;
 }
@@ -346,8 +350,10 @@ export async function cancelJoinRequest(requestId, actorId, roles = []) {
     const live = await db.ArtistLive.findByPk(req.live_id, { attributes: ['artist_id'], raw: true });
     if (!live || live.artist_id !== actorId) throw ApiError.forbidden('FORBIDDEN');
   }
+  const wasAccepted = req.status === 'accepted';
   req.status = 'cancelled';
   await req.save();
+  if (wasAccepted) void setLiveGuestPublish(req.live_id, req.user_id, false);
   emitToRoom('/live', liveRoom(req.live_id), 'join:update', {
     live_id: req.live_id,
     request_id: req.id,

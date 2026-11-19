@@ -1,0 +1,65 @@
+# ============================================================================
+# Configuration LiveKit — PRODUCTION (VPS, réseau hôte). Voir docker-compose.yml + le guide
+# docs/07-LIVEKIT-PRODUCTION-VPS.md. Les secrets viennent de l'environnement (LIVEKIT_KEYS).
+# ============================================================================
+
+# Signalisation WebSocket (nginx termine le TLS sur 443 → proxy vers ce port en local).
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+
+rtc:
+  # Média UDP : une plage de ports (meilleure qualité que le mux mono-port en prod).
+  port_range_start: 50000
+  port_range_end: 50200
+  # Fallback TCP pour les réseaux qui bloquent l'UDP.
+  tcp_port: 7881
+  # Le VPS a une IP publique directe : LiveKit la détecte via STUN et l'annonce aux clients.
+  use_external_ip: true
+  # Ne rien annoncer sur les interfaces Docker internes.
+  interfaces:
+    excludes:
+      - docker0
+
+# TURN intégré : relais pour les clients derrière des NAT stricts / réseaux mobiles (4G) /
+# pare-feu d'entreprise. Sans lui, « A entend B mais pas C » selon l'opérateur de chacun.
+turn:
+  enabled: true
+  # Sous-domaine dédié (ex. turn.dualmusic.pro) pointant sur l'IP du VPS, avec certificat Let's
+  # Encrypt monté par docker-compose. TLS sur 5349 (passe les pare-feu comme du HTTPS).
+  domain: ${TURN_DOMAIN}
+  tls_port: 5349
+  udp_port: 3478
+  cert_file: /etc/livekit/turn.crt
+  key_file: /etc/livekit/turn.key
+  # Partage les ports média : évite d'ouvrir une seconde plage.
+  relay_range_start: 50000
+  relay_range_end: 50200
+
+# Clés API : fournies par LIVEKIT_KEYS dans docker-compose (format `clé: secret`, ≥ 32 car.).
+# NE PAS réutiliser `devkey` / le secret de développement en production.
+
+# Redis : file de jobs pour l'enregistrement (egress) + état des rooms.
+redis:
+  address: 127.0.0.1:6379
+
+# Limites raisonnables pour un VPS 4 vCPU / 8 Go. À ajuster avec la croissance.
+room:
+  auto_create: true
+  empty_timeout: 300          # ferme une room vide après 5 min
+  max_participants: 500
+  enabled_codecs:
+    - mime: audio/opus
+    - mime: video/vp8
+    - mime: video/h264
+
+# Webhook : fin d'enregistrement → le backend crée le replay (vérifié via la clé API).
+# Le backend tourne sur le même VPS (port 4000) ; adapter si déployé ailleurs.
+webhook:
+  api_key: ${LIVEKIT_API_KEY}
+  urls:
+    - http://127.0.0.1:4000/webhooks/livekit
+
+logging:
+  level: info
+  json: true

@@ -106,6 +106,7 @@ export async function purchaseDedication(fanId, { concertId, concertType, messag
     title: 'Nouvelle dédicace',
     message: 'Un fan a demandé une dédicace — accepte ou refuse-la.',
     data: { dedication_id: out.dedication_id, concert_id: concertId, concert_type: concertType },
+    email: true,
   }).catch(() => {});
   // Rafraîchit le badge de l'artiste EN DIRECT (pas besoin d'ouvrir le panneau pour le voir).
   emitToRoom('/live', dedicationRoom(concertType, concertId), 'dedication:new', {
@@ -151,6 +152,7 @@ export async function acceptDedication(id, actorId, roles) {
     title: "Dédicace acceptée par l'artiste !",
     message: `Ta dédicace a été acceptée — ${Number(ded.price_credits)} crédits ont été débités de ton solde. Merci pour ton soutien !`,
     data: { dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type, price_credits: Number(ded.price_credits) },
+    email: true,
   }).catch(() => {});
   emitToRoom('/live', dedicationRoom(ded.concert_type, ded.concert_id), 'dedication:update', {
     dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type,
@@ -186,6 +188,7 @@ export async function rejectDedication(id, actorId, roles) {
     title: "Dédicace refusée",
     message: "L'artiste n'a pas pu donner suite à ta dédicace cette fois-ci. Tu n'as rien été débité.",
     data: { dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type },
+    email: true,
   }).catch(() => {});
   emitToRoom('/live', dedicationRoom(ded.concert_type, ded.concert_id), 'dedication:update', {
     dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type,
@@ -220,6 +223,7 @@ export async function deliverDedication(id, actorId, roles) {
     title: 'Ta dédicace a été interprétée !',
     message: "L'artiste vient de faire ta dédicace en direct. Merci pour ton soutien !",
     data: { dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type },
+    email: true,
   }).catch(() => {});
   emitToRoom('/live', dedicationRoom(ded.concert_type, ded.concert_id), 'dedication:update', {
     dedication_id: id, concert_id: ded.concert_id, concert_type: ded.concert_type,

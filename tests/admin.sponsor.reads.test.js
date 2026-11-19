@@ -46,6 +46,16 @@ afterAll(async () => {
 beforeEach(() => vi.clearAllMocks());
 
 describe('admin analytics', () => {
+  it('getBadgeCounts returns every sidebar counter as a number', async () => {
+    const counts = await admin.getBadgeCounts();
+    for (const key of [
+      'pendingArtistRequests', 'pendingManagerRequests', 'pendingDuelRequests',
+      'pendingWithdrawals', 'activeLives', 'pendingSponsors', 'pendingConcerts',
+    ]) {
+      expect(typeof counts[key]).toBe('number');
+    }
+  });
+
   it('getRevenueStats groups by source type (period=all)', async () => {
     const rows = await admin.getRevenueStats('all');
     const byType = Object.fromEntries(rows.map((r) => [r.source_type, r]));

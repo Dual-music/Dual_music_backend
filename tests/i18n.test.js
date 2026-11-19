@@ -9,7 +9,7 @@ import { MESSAGES, resolveMessage } from '../src/i18n/messages.js';
 import { db } from '../src/models/index.js';
 
 /**
- * @file i18n tests (§3.8): every machine error code raised in the codebase has a
+ * @file i18n tests (Â§3.8): every machine error code raised in the codebase has a
  * FR + EN message, `resolveMessage` honors the language, and the HTTP layer
  * localizes errors per `Accept-Language`.
  */
@@ -29,7 +29,7 @@ function collectCodes(dir) {
   const re = /ApiError\.[a-zA-Z]+\(\s*'([A-Z0-9_]+)'|new ApiError\(\s*\d+\s*,\s*'([A-Z0-9_]+)'/g;
   for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.js')) continue;
-    const full = join(entry.path ?? dir, entry.name);
+    const full = join(entry.parentPath ?? entry.path ?? dir, entry.name);
     const src = readFileSync(full, 'utf8');
     let m;
     while ((m = re.exec(src)) !== null) codes.add(m[1] || m[2]);

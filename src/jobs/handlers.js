@@ -108,6 +108,7 @@ export async function sendEventReminders() {
         title: 'Ton concert commence bientôt',
         message: `« ${concert.title} » démarre dans moins de 30 minutes.`,
         data: { kind: 'concert', concert_id: concert.id },
+        email: true,
         push: true,
       });
       concerts += 1;
@@ -128,6 +129,7 @@ export async function sendEventReminders() {
         title: 'Ta compétition commence bientôt',
         message: `« ${comp.title} » démarre dans moins de 30 minutes.`,
         data: { kind: 'competition', competition_id: comp.id },
+        email: true,
       });
       competitions += 1;
     }
@@ -396,6 +398,7 @@ export async function expireDuelRequests() {
           title: 'Invitation de duel expirée ⌛',
           message: 'Une invitation de duel a été annulée automatiquement (date dépassée sans réponse).',
           data: { request_id: req.id },
+          email: true,
           push: true,
         }),
       ),

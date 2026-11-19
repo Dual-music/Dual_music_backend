@@ -41,12 +41,14 @@ function ensureVapid() {
  * @param {Record<string, unknown>} [params.data] - Arbitrary payload (event id, url…).
  * @param {boolean} [params.email=false]  - Also send a transactional email.
  * @param {boolean} [params.push=true]    - Also send Web Push.
+ * @param {object} [params.existingRow]   - Already-persisted notification row (skips the insert).
  * @returns {Promise<void>}
  * @sideeffect Inserts one `notifications` row; emits `notification:new`; may send push/email.
  */
-export async function notifyUser({ userId, type, title, message, data = {}, email = false, push = true }) {
-  // 1) Durable in-app record (source of truth for the bell dropdown).
-  const row = await db.Notification.create({ user_id: userId, type, title, message, data });
+export async function notifyUser({ userId, type, title, message, data = {}, email = false, push = true, existingRow = null }) {
+  // 1) Durable in-app record (source of truth for the bell dropdown). `existingRow` : ligne déjà
+  //    insérée par l'appelant (annonces en masse) — on ne diffuse alors que sur les autres canaux.
+  const row = existingRow ?? (await db.Notification.create({ user_id: userId, type, title, message, data }));
 
   // 2) Realtime nudge to the connected client.
   emitToUser(userId, 'notification:new', {
@@ -55,7 +57,7 @@ export async function notifyUser({ userId, type, title, message, data = {}, emai
     title,
     message,
     data,
-    created_at: row.created_at,
+    created_at: row.created_at ?? new Date(),
   });
 
   // Préférences (une seule lecture) — gate push + email selon les choix de l'utilisateur.

@@ -197,6 +197,7 @@ export async function updateDuel(id, actor, roles, patch) {
       title: 'Vous avez gagné le duel 🏆',
       message: 'Félicitations, vous êtes le vainqueur du duel !',
       data: { duel_id: id },
+      email: true,
       push: true,
     }).catch(() => {});
   }

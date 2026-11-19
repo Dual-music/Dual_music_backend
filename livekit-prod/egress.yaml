@@ -1,0 +1,20 @@
+# ============================================================================
+# Configuration LiveKit EGRESS — enregistrement des directs (PRODUCTION, VPS).
+# Chrome headless qui rejoint la room, compose la vidéo et l'envoie vers R2/S3 (sortie fournie
+# par le backend à chaque enregistrement). Communique avec le serveur via Redis + WebSocket.
+# ============================================================================
+
+redis:
+  address: 127.0.0.1:6379
+
+# Doit correspondre EXACTEMENT à la clé/secret de LIVEKIT_KEYS (docker-compose .env).
+api_key: ${LIVEKIT_API_KEY}
+api_secret: ${LIVEKIT_API_SECRET}
+
+# L'egress tourne sur le même hôte : signalisation locale, non chiffrée (jamais exposée).
+ws_url: ws://127.0.0.1:7880
+insecure: true
+
+# Enregistrement via navigateur headless (duels multi-rooms, lives avec invités) : le backend
+# fournit l'URL `…/recording-view` du site web (WEB_EGRESS_BASE_URL, en https public).
+log_level: info

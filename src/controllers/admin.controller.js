@@ -21,6 +21,11 @@ export async function stats(_req, res) {
   return sendSuccess(res, await adminService.getStats());
 }
 
+/** GET /admin/badge-counts — compteurs des pastilles du menu admin. */
+export async function badgeCounts(_req, res) {
+  return sendSuccess(res, await adminService.getBadgeCounts());
+}
+
 /** GET /admin/dashboard — consolidated dashboard data set. */
 export async function dashboard(_req, res) {
   return sendSuccess(res, await adminService.getDashboard());
@@ -209,6 +214,7 @@ export async function rejectDuelRequest(req, res) {
 
 export default {
   stats,
+  badgeCounts,
   logs,
   getRoles,
   dashboard,

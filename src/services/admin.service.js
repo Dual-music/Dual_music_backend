@@ -96,6 +96,42 @@ export async function getStats() {
 }
 
 /**
+ * Compteurs des pastilles du menu admin (demandes à traiter, directs en cours). Requêtes
+ * `COUNT` uniquement : assez léger pour être rafraîchi toutes les 30 s par le menu, sur
+ * n'importe quelle page (contrairement à `/admin/dashboard` qui renvoie les listes complètes).
+ * Les statuts comptés sont ceux affichés « à traiter » par le tableau de bord.
+ * @returns {Promise<Record<string, number>>}
+ */
+export async function getBadgeCounts() {
+  const [
+    pendingArtistRequests,
+    pendingManagerRequests,
+    pendingDuelRequests,
+    pendingWithdrawals,
+    activeLives,
+    pendingSponsors,
+    pendingConcerts,
+  ] = await Promise.all([
+    db.ArtistRequest.count({ where: { status: 'pending' } }),
+    db.ManagerRequest.count({ where: { status: 'pending' } }),
+    db.DuelRequest.count({ where: { status: ['pending', 'accepted', 'admin_pending'] } }),
+    db.WithdrawalRequest.count({ where: { status: 'pending' } }),
+    db.ArtistLive.count({ where: { status: 'live' } }),
+    db.SponsorRequest.count({ where: { status: ['pending', 'paid'] } }),
+    db.ArtistConcert.count({ where: { approval_status: 'pending' } }),
+  ]);
+  return {
+    pendingArtistRequests,
+    pendingManagerRequests,
+    pendingDuelRequests,
+    pendingWithdrawals,
+    activeLives,
+    pendingSponsors,
+    pendingConcerts,
+  };
+}
+
+/**
  * Reads the admin audit log (paginated, newest first).
  * @param {object} query - `actionType?` + pagination.
  * @returns {Promise<{ rows: object[], pagination: object }>}
@@ -581,13 +617,30 @@ export async function writeLog({ actionType, targetType, targetId, targetName, d
 export async function broadcastAnnouncement({ title, message, type = 'announcement', adminId, adminName }) {
   const users = await db.Profile.findAll({ attributes: ['id'], raw: true });
   const now = new Date();
-  const rows = users.map((u) => ({ user_id: u.id, type, title, message, data: { announcement: true }, read: false, created_at: now }));
+  const data = { announcement: true };
+  const rows = users.map((u) => ({ user_id: u.id, type, title, message, data, read: false, created_at: now }));
   // Chunked bulk insert to avoid oversized statements on large user bases.
+  const created = [];
   for (let i = 0; i < rows.length; i += 500) {
-    await db.Notification.bulkCreate(rows.slice(i, i + 500));
+    created.push(...(await db.Notification.bulkCreate(rows.slice(i, i + 500))));
   }
   await logAdminAction({ adminId, adminName, actionType: 'broadcast_announcement', targetType: 'announcement', details: { title, recipients: rows.length } });
+  // Diffusion sur les autres canaux (affichage en direct dans la cloche, push, e-mail) en
+  // arrière-plan : la réponse à l'admin n'attend pas l'envoi de centaines d'e-mails.
+  void fanOutAnnouncement(created, { type, title, message, data });
   return { recipients: rows.length };
+}
+
+/** Envoie une annonce déjà enregistrée sur les canaux temps réel / push / e-mail, par petits lots. */
+async function fanOutAnnouncement(created, { type, title, message, data }) {
+  const BATCH = 10;
+  for (let i = 0; i < created.length; i += BATCH) {
+    await Promise.allSettled(
+      created.slice(i, i + BATCH).map((row) =>
+        notifyUser({ userId: row.user_id, type, title, message, data, email: true, existingRow: row }),
+      ),
+    );
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -710,8 +763,8 @@ export async function approveDuelRequest({ id, managerId, scheduledDate, ticketP
 
   if (isNew) {
     await Promise.allSettled([
-      notifyUser({ userId: request.requester_id, type: 'duel_request', title: 'Duel approuvé', message: 'Votre demande de duel a été approuvée.', data: { duel_id: duel.id } }),
-      notifyUser({ userId: request.opponent_id, type: 'duel_request', title: 'Nouveau duel', message: 'Un duel vous a été programmé.', data: { duel_id: duel.id } }),
+      notifyUser({ userId: request.requester_id, type: 'duel_request', title: 'Duel approuvé', message: 'Votre demande de duel a été approuvée.', data: { duel_id: duel.id }, email: true }),
+      notifyUser({ userId: request.opponent_id, type: 'duel_request', title: 'Nouveau duel', message: 'Un duel vous a été programmé.', data: { duel_id: duel.id }, email: true }),
     ]);
   }
   await logAdminAction({ adminId, adminName, actionType: 'approve_duel_request', targetType: 'duel_request', targetId: id, details: { duel_id: duel.id } });
@@ -733,7 +786,7 @@ export async function rejectDuelRequest({ id, adminId, adminName }) {
   req.status = 'rejected';
   req.updated_at = new Date();
   await req.save();
-  await notifyUser({ userId: req.requester_id, type: 'duel_request', title: 'Demande de duel refusée', message: 'Votre demande de duel a été refusée.', data: { request_id: id } }).catch(() => {});
+  await notifyUser({ userId: req.requester_id, type: 'duel_request', title: 'Demande de duel refusée', message: 'Votre demande de duel a été refusée.', data: { request_id: id }, email: true }).catch(() => {});
   await logAdminAction({ adminId, adminName, actionType: 'reject_duel_request', targetType: 'duel_request', targetId: id });
   return req;
 }
@@ -741,6 +794,7 @@ export async function rejectDuelRequest({ id, adminId, adminName }) {
 export default {
   ROLES,
   getStats,
+  getBadgeCounts,
   listLogs,
   getUserRoles,
   getRolesBatch,

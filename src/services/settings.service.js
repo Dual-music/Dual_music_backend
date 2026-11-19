@@ -1,3 +1,4 @@
+import { config } from '../config/env.js';
 import { db } from '../models/index.js';
 import { ApiError } from '../utils/ApiError.js';
 
@@ -47,6 +48,16 @@ export const PUBLIC_SETTING_KEYS = Object.freeze([
 const PUBLIC_KEY_SET = new Set(PUBLIC_SETTING_KEYS);
 
 /**
+ * `push_config.vapid_public_key` : la clé du serveur (`VAPID_PUBLIC_KEY`) fait foi quand elle est
+ * définie. Le navigateur doit s'abonner avec la clé publique appariée à la clé privée qui signe
+ * les envois ; une valeur saisie à la main dans l'admin pourrait ne pas correspondre (push muet).
+ */
+function withServerDefaults(key, value) {
+  if (key !== 'push_config' || !config.push.vapidPublicKey) return value;
+  return { ...(value && typeof value === 'object' ? value : {}), vapid_public_key: config.push.vapidPublicKey };
+}
+
+/**
  * Reads a single public setting value.
  * @param {string} key
  * @returns {Promise<unknown|null>} The stored JSON value, or `null` if unset.
@@ -55,7 +66,7 @@ const PUBLIC_KEY_SET = new Set(PUBLIC_SETTING_KEYS);
 export async function getPublicSetting(key) {
   if (!PUBLIC_KEY_SET.has(key)) throw ApiError.notFound('NOT_FOUND');
   const row = await db.PlatformSetting.findByPk(key, { raw: true });
-  return row?.value ?? null;
+  return withServerDefaults(key, row?.value ?? null);
 }
 
 /**
@@ -74,7 +85,7 @@ export async function getPublicSettings(keys) {
   });
   const byKey = new Map(rows.map((r) => [r.key, r.value]));
   const out = {};
-  for (const key of requested) out[key] = byKey.get(key) ?? null;
+  for (const key of requested) out[key] = withServerDefaults(key, byKey.get(key) ?? null);
   return out;
 }
 

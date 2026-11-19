@@ -21,6 +21,7 @@ export const adminRouter = Router();
 adminRouter.use(authenticate());
 
 adminRouter.get('/stats', requireRole('admin'), adminController.stats);
+adminRouter.get('/badge-counts', requireRole('admin'), adminController.badgeCounts);
 adminRouter.get('/dashboard', requireRole('admin'), adminController.dashboard);
 adminRouter.get('/logs', requireRole('admin', 'moderator'), validate(v.listLogs), adminController.logs);
 adminRouter.post('/logs', requireRole('admin'), validate(v.writeLog), adminController.writeLog);

@@ -83,6 +83,55 @@ function authMiddleware(required) {
 /** Room-join validation: known event types + real-time leaderboard rooms. */
 const VALID_TYPES = new Set(['duel', 'concert', 'competition', 'live', 'leaderboard']);
 
+/** Cache court `liveId → artist_id` pour autoriser les commandes hôte sans requête à chaque message. */
+const liveHostCache = new Map();
+const LIVE_HOST_TTL_MS = 60_000;
+
+/**
+ * Artiste (hôte) d'un live, mis en cache 60 s. `null` si inconnu.
+ * @param {string} liveId
+ * @returns {Promise<string|null>}
+ */
+async function liveHostId(liveId) {
+  const hit = liveHostCache.get(liveId);
+  if (hit && hit.until > Date.now()) return hit.artistId;
+  const live = await db.ArtistLive.findByPk(liveId, { attributes: ['artist_id'], raw: true }).catch(() => null);
+  const artistId = live?.artist_id ?? null;
+  liveHostCache.set(liveId, { artistId, until: Date.now() + LIVE_HOST_TTL_MS });
+  return artistId;
+}
+
+/** Actions `guest_action` réservées à l'hôte du live (couper un micro, expulser, chrono). */
+const HOST_ONLY_GUEST_ACTIONS = new Set(['toggle_mic', 'kick', 'start_timer', 'timer_ended']);
+
+/**
+ * Le relais `broadcast` était ouvert à tous (même anonymes) : n'importe qui pouvait couper le
+ * micro d'un invité, l'expulser ou afficher un faux état micro/caméra. On verrouille les canaux
+ * de CONTRÔLE ; les canaux d'ambiance (cœurs, emojis, likes…) restent libres.
+ *  - `live-controls-<liveId>` / `guest_action` (actions hôte) → émetteur = artiste du live ;
+ *  - `live-guest-state-<liveId>` / `guest_media_state`      → `payload.userId` = émetteur.
+ * @param {import('socket.io').Socket} socket
+ * @param {string} channel
+ * @param {string} event
+ * @param {unknown} payload
+ * @returns {Promise<boolean>}
+ */
+async function canBroadcast(socket, channel, event, payload) {
+  let m;
+  if ((m = channel.match(/^live-controls-(.+)$/))) {
+    if (event !== 'guest_action') return true;
+    const action = payload && typeof payload === 'object' ? payload.action : undefined;
+    if (!HOST_ONLY_GUEST_ACTIONS.has(action)) return true;
+    if (!socket.userId) return false;
+    return (await liveHostId(m[1])) === socket.userId;
+  }
+  if (channel.startsWith('live-guest-state-') && event === 'guest_media_state') {
+    const target = payload && typeof payload === 'object' ? payload.userId : undefined;
+    return !!socket.userId && target === socket.userId;
+  }
+  return true;
+}
+
 /**
  * Wires join/leave handlers for a room-based namespace.
  * @param {import('socket.io').Namespace} nsp
@@ -138,10 +187,15 @@ function wireRoomNamespace(nsp) {
     socket.on('broadcast:leave', (channel) => {
       if (typeof channel === 'string') socket.leave(`bc:${channel}`);
     });
-    socket.on('broadcast', ({ channel, event, payload } = {}) => {
-      if (typeof channel === 'string' && typeof event === 'string' && channel.length <= 200) {
-        socket.to(`bc:${channel}`).emit('broadcast', { channel, event, payload });
+    socket.on('broadcast', async ({ channel, event, payload } = {}) => {
+      if (typeof channel !== 'string' || typeof event !== 'string' || channel.length > 200) return;
+      if (!(await canBroadcast(socket, channel, event, payload))) {
+        socket.emit('broadcast:rejected', { channel, event });
+        return;
       }
+      // `from` = identité vérifiée de l'émetteur (null = spectateur anonyme) : les clients
+      // peuvent ainsi ignorer une commande qui ne vient pas de l'hôte attendu.
+      socket.to(`bc:${channel}`).emit('broadcast', { channel, event, payload, from: socket.userId ?? null });
     });
   });
 }

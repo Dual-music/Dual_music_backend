@@ -39,6 +39,16 @@ async function isBannedFromEvent(kind, eventId, userId) {
  */
 
 /**
+ * Auteur de repli quand le profil n'existe plus (compte purgé) : un nom court dérivé de l'id
+ * plutôt que `null` — les clients retombaient sinon sur le mot « Utilisateur ».
+ * @param {string} userId
+ */
+function unknownAuthor(userId) {
+  const name = `Fan ${String(userId).replace(/-/g, '').slice(0, 4).toUpperCase()}`;
+  return { id: userId, full_name: name, display_name: name, stage_name: null, avatar_url: null };
+}
+
+/**
  * Lists messages for an event (newest-first, paginated), hydrated with authors.
  * @param {object} cfg
  * @param {import('sequelize').ModelStatic<any>} cfg.model
@@ -57,7 +67,7 @@ export async function listMessages({ model, fk }, eventId, query) {
   const byId = new Map(profiles.map((p) => [p.id, p]));
   const hydrated = rows.map((r) => ({
     ...r,
-    author: byId.get(r.user_id) || { id: r.user_id, full_name: null, avatar_url: null },
+    author: byId.get(r.user_id) || unknownAuthor(r.user_id),
   }));
   return { rows: hydrated, pagination: buildPaginationMeta({ mode, rows, limit, page: query.page }) };
 }
@@ -90,7 +100,7 @@ export async function postMessage({ model, fk, threaded = true, kind, eventModel
   const created = await model.create(payload);
 
   const [author] = await getDisplayProfiles([userId]);
-  const full = { ...created.get({ plain: true }), author: author || { id: userId, full_name: null, avatar_url: null } };
+  const full = { ...created.get({ plain: true }), author: author || unknownAuthor(userId) };
 
   // Broadcast to the event's chat room (no-op if realtime is not attached).
   if (kind) emitToRoom('/chat', roomName(kind, eventId), 'message', full);

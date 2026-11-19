@@ -219,27 +219,6 @@ function liveRecordingKey(liveId, recordingId) {
 }
 
 /**
- * Construit l'URL « vue enregistrement » d'un live (page web dédiée, sans chrome) + mint un
- * jeton de visionnage pour la room de l'hôte. Contrairement au duel (2 rooms fixes connues à
- * l'avance), un live peut gagner/perdre des invités EN COURS d'enregistrement — la page elle-même
- * interroge donc `GET /recordings/live/:liveId/guests` en continu (voir `getLiveRecordingGuests`)
- * au lieu de recevoir tous les jetons d'un coup ici.
- * @param {string} liveId @param {string} recordingId - `stream_recordings.id` de CETTE session.
- * @returns {Promise<string|null>} null si le live est introuvable ou `WEB_EGRESS_BASE_URL` absent.
- */
-async function buildLiveRecordingUrl(liveId, recordingId) {
-  const live = await db.ArtistLive.findByPk(liveId, { attributes: ['id'], raw: true });
-  if (!live) return null;
-  const base = String(config.webEgressBaseUrl || '').replace(/\/+$/, '');
-  if (!base) return null;
-
-  const host = await issueToken({ userId: `egress-recording-${liveId}`, roomName: `live-${liveId}`, isHost: false, canPublish: false });
-  const key = liveRecordingKey(liveId, recordingId);
-  const qs = new URLSearchParams({ u: host.url, t0: host.token, rid: recordingId, key });
-  return `${base}/live/${liveId}/recording-view?${qs.toString()}`;
-}
-
-/**
  * Liste des invités actuellement acceptés sur un live (`live_join_requests.status = 'accepted'`)
  * + un jeton de visionnage (lecture seule) pour la room de chacun. Appelée en continu par la
  * page « vue enregistrement » headless pour suivre les arrivées/départs d'invités pendant que
@@ -303,13 +282,10 @@ async function startEgressSegment(rec, seq) {
     const url = await buildDuelRecordingUrl(rec.source_id);
     if (!url) throw new Error('duel recording view URL unavailable (missing artists or WEB_EGRESS_BASE_URL)');
     info = await getEgressClient().startWebEgress(url, { file: fileOutput, images: imageOutput }, { awaitStartSignal: true });
-  } else if (rec.source_type === 'live') {
-    // Les invités publient chacun dans leur propre room, jamais `live-<id>` : même stratégie
-    // navigateur headless que le duel (voir buildLiveRecordingUrl ci-dessus).
-    const url = await buildLiveRecordingUrl(rec.source_id, rec.id);
-    if (!url) throw new Error('live recording view URL unavailable (missing live or WEB_EGRESS_BASE_URL)');
-    info = await getEgressClient().startWebEgress(url, { file: fileOutput, images: imageOutput }, { awaitStartSignal: true });
   } else {
+    // Concert, compétition ET live : UNE room contient tous les publieurs (depuis la room unique
+    // `live-<id>` — hôte + invités —, le navigateur headless `buildLiveRecordingUrl` n'est plus
+    // nécessaire pour les lives ; conservé pour d'éventuels anciens clients, mais non utilisé).
     info = await getEgressClient().startRoomCompositeEgress(
       rec.room_name,
       { file: fileOutput, images: imageOutput },

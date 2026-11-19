@@ -22,6 +22,9 @@ const tokenSchema = {
     isHost: Joi.boolean().default(false),
     canPublish: Joi.boolean(),
     participantName: Joi.string().max(120).allow('', null),
+    // Identifiant stable par appareil/onglet → identité LiveKit unique par connexion
+    // (le même compte sur web + mobile ne s'éjecte plus mutuellement).
+    deviceId: Joi.string().max(64).allow('', null),
     metadata: Joi.object().unknown(true),
   }),
 };
@@ -29,7 +32,7 @@ const tokenSchema = {
 export const livekitRouter = Router();
 
 livekitRouter.post('/token', authenticate(), validate(tokenSchema), async (req, res) => {
-  const data = await livekitService.issueToken({ userId: req.user.id, ...req.body });
+  const data = await livekitService.issueToken({ userId: req.user.id, roles: req.roles || [], ...req.body });
   return sendSuccess(res, data, { status: 201 });
 });
 
